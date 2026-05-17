@@ -12,6 +12,13 @@ export class VectorRenderer {
   /** mesh → arrow key for picking */
   private meshToKey = new Map<BABYLON.Mesh, string>();
 
+  /**
+   * Tracks the actual 3-D origin (WITHOUT defaultOriginHeight offset) that
+   * each arrow was last rendered at.  In normal mode this mirrors arrow.origin;
+   * in head-to-tail mode it is the accumulated chain position.
+   */
+  private renderedOrigins = new Map<string, BABYLON.Vector3>();
+
   constructor(scene: BABYLON.Scene, defaultOriginHeight: number) {
     this.scene = scene;
     this.defaultOriginHeight = defaultOriginHeight;
@@ -50,23 +57,41 @@ export class VectorRenderer {
       for (const v of vectors) {
         if (!v.vector) continue;
         if (v.type === "derived") continue;
+        this.renderedOrigins.set(v.key, currentOrigin.clone());
         v.vector.update(currentOrigin, v.value);
         currentOrigin = currentOrigin.add(v.value);
       }
       for (const v of vectors) {
         if (!v.vector) continue;
         if (v.type !== "derived") continue;
+        this.renderedOrigins.set(v.key, chainStart.clone());
         v.vector.update(chainStart, v.value);
       }
       return;
     }
     vectors.forEach((v) => {
+      this.renderedOrigins.set(v.key, v.origin.clone());
       v.vector?.update(v.origin, v.value);
     });
   }
 
   update(v: Arrow) {
+    // Single-arrow update: keep renderedOrigins in sync for normal mode.
+    // Head-to-tail re-orders the whole chain so always use refresh() there.
+    this.renderedOrigins.set(v.key, v.origin.clone());
     v.vector?.update(v.origin, v.value);
+  }
+
+  /**
+   * Returns the origin that was actually used when this arrow was last rendered.
+   * In head-to-tail mode this is the accumulated chain position, NOT arrow.origin.
+   * Falls back to arrow.origin if the key has never been rendered.
+   */
+  public getRenderedOrigin(
+    key: string,
+    fallback: BABYLON.Vector3,
+  ): BABYLON.Vector3 {
+    return this.renderedOrigins.get(key)?.clone() ?? fallback.clone();
   }
 
   remove(v: Arrow) {

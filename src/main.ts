@@ -37,14 +37,20 @@ class Playground {
     camera.attachControl(canvas);
 
     // ── Lights ────────────────────────────────────────────────────────────
-    const hemi = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+    const hemi = new BABYLON.HemisphericLight(
+      "light",
+      new BABYLON.Vector3(0, 1, 0),
+      scene,
+    );
     hemi.intensity = 0.6;
 
     const spot = new BABYLON.SpotLight(
       "splight",
       new BABYLON.Vector3(0, 10, 0),
       new BABYLON.Vector3(0, -1, 0),
-      Math.PI / 2, 2, scene,
+      Math.PI / 2,
+      2,
+      scene,
     );
     spot.intensity = 0.8;
 
@@ -60,7 +66,7 @@ class Playground {
     grid.gridRatio = 1;
     grid.opacity = 0.28;
     grid.mainColor = new BABYLON.Color3(0.05, 0.06, 0.09);
-    grid.lineColor = new BABYLON.Color3(0.18, 0.20, 0.28);
+    grid.lineColor = new BABYLON.Color3(0.18, 0.2, 0.28);
     grid.majorUnitFrequency = 5;
     grid.minorUnitVisibility = 0.2;
     ground.material = grid;
@@ -71,7 +77,11 @@ class Playground {
 
     // ── Origin marker ──────────────────────────────────────────────────────
     const defaultOriginHeight = labSize / 2;
-    const origin = BABYLON.MeshBuilder.CreateSphere("origin", { diameter: 0.35 }, scene);
+    const origin = BABYLON.MeshBuilder.CreateSphere(
+      "origin",
+      { diameter: 0.35 },
+      scene,
+    );
     origin.position = new BABYLON.Vector3(0, defaultOriginHeight, 0);
     const originMat = new BABYLON.StandardMaterial("originMat", scene);
     originMat.emissiveColor = new BABYLON.Color3(0.6, 0.1, 0.8);
@@ -81,10 +91,20 @@ class Playground {
     // ── Core systems ───────────────────────────────────────────────────────
     const vecEngine = new VectorEngine(defaultOriginHeight);
     const renderer = new VectorRenderer(scene, defaultOriginHeight);
-    const overlays = new VectorOverlays(scene, defaultOriginHeight);
-    const cameraController = new CameraController(camera, scene, canvas, defaultOriginHeight);
+    const overlays = new VectorOverlays(scene, defaultOriginHeight, renderer);
+    const cameraController = new CameraController(
+      camera,
+      scene,
+      canvas,
+      defaultOriginHeight,
+    );
     const dragController = new DragController(
-      scene, camera, canvas, vecEngine, renderer, defaultOriginHeight,
+      scene,
+      camera,
+      canvas,
+      vecEngine,
+      renderer,
+      defaultOriginHeight,
     );
 
     // ── Engine → Renderer wiring ───────────────────────────────────────────
@@ -172,6 +192,77 @@ class Playground {
 
     // ── UI ────────────────────────────────────────────────────────────────
     new UI(scene, vecEngine, dragController, cameraController);
+
+    // ── Keyboard shortcuts ────────────────────────────────────────────────
+    // F  → focus selected vector (animated zoom to arrow midpoint)
+    // Esc → reset to default view
+    window.addEventListener("keydown", (e) => {
+      // Don't fire when typing in an input field
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
+
+      if (e.key === "f" || e.key === "F") {
+        const key = vecEngine.getSelectedKey();
+        if (!key) return;
+        const arrow = vecEngine.getVector(key);
+        if (!arrow) return;
+        const renderedOrigin = renderer
+          .getRenderedOrigin(key, arrow.origin)
+          .add(new BABYLON.Vector3(0, defaultOriginHeight, 0));
+        cameraController.focusVector(renderedOrigin, arrow.value);
+      }
+
+      if (e.key === "Escape") {
+        vecEngine.selectVector(null);
+        cameraController.resetView();
+      }
+    });
+
+    // ── Idle animation ────────────────────────────────────────────────────
+    // Very slow camera orbit when nothing has happened for 8 seconds.
+    // Stops the moment the user moves the mouse or touches a key.
+    // The rotation is so slow (~3°/s) that it just gives the scene life
+    // without making the axes or vectors hard to read.
+    let lastInteraction = performance.now();
+    let idleActive = false;
+    const IDLE_DELAY_MS = 8000;
+    const IDLE_SPEED = 0.003; // radians per frame at 60fps ≈ ~10°/s feels calm
+
+    const resetIdleTimer = () => {
+      lastInteraction = performance.now();
+      if (idleActive) {
+        idleActive = false;
+        // Smoothly re-attach camera control
+        camera.attachControl(canvas);
+      }
+    };
+
+    window.addEventListener("pointermove", resetIdleTimer, { passive: true });
+    window.addEventListener("pointerdown", resetIdleTimer, { passive: true });
+    window.addEventListener("keydown", resetIdleTimer, { passive: true });
+    window.addEventListener("wheel", resetIdleTimer, { passive: true });
+
+    scene.onBeforeRenderObservable.add(() => {
+      // Don't idle when the scene is frozen or user is dragging
+      if (cameraController.isFrozen()) return;
+
+      const now = performance.now();
+      const idle = now - lastInteraction > IDLE_DELAY_MS;
+
+      if (idle && !idleActive) {
+        // Begin idle: detach camera control so we can drive it manually
+        idleActive = true;
+        camera.detachControl();
+      }
+
+      if (idleActive) {
+        // Gently drift alpha (azimuth). Beta and radius stay untouched.
+        camera.alpha += IDLE_SPEED;
+      }
+    });
 
     return scene;
   }

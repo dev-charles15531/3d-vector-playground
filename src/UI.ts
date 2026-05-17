@@ -11,6 +11,7 @@ import {
   Button,
   ScrollViewer,
   Checkbox,
+  Grid,
 } from "@babylonjs/gui";
 
 import { VectorEngine } from "./VectorEngine";
@@ -58,7 +59,9 @@ export class UI {
     this.cameraController.onFreezeChanged = (frozen) => {
       this.freezeBtn.background = frozen ? "#EF4444" : "#1E293B";
       this.freezeBtn.color = frozen ? "#fff" : "#94A3B8";
-      (this.freezeBtn.children[0] as TextBlock).text = frozen ? "Unfreeze" : "Freeze Scene";
+      (this.freezeBtn.children[0] as TextBlock).text = frozen
+        ? "Unfreeze"
+        : "Freeze Scene";
     };
 
     this.cameraController.onHighContrastChanged = (enabled) => {
@@ -71,7 +74,7 @@ export class UI {
     // ── Bottom strip (vector list) ──────────────────────────────────────────
     const root = new Rectangle();
     root.width = "100%";
-    root.height = "130px";
+    root.height = "155px";
     root.thickness = 0;
     root.background = "#0A0F1EDD";
     root.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
@@ -129,7 +132,9 @@ export class UI {
     htCheck.color = "#38BDF8";
     htCheck.background = "#1E293B";
     htCheck.isChecked = this.engine.getHeadToTail();
-    htCheck.onIsCheckedChangedObservable.add((v) => this.engine.setHeadToTail(v));
+    htCheck.onIsCheckedChangedObservable.add((v) =>
+      this.engine.setHeadToTail(v),
+    );
     const htWrap = this.wrapWithLabel(htCheck, "Head-to-Tail");
     htWrap.paddingRight = "10px";
     row.addControl(htWrap);
@@ -160,7 +165,9 @@ export class UI {
       { preset: "free", label: "3D" },
     ];
     viewPresets.forEach(({ preset, label }) => {
-      const btn = this.makeToolBtn(label, () => this.cameraController.goToPreset(preset));
+      const btn = this.makeToolBtn(label, () =>
+        this.cameraController.goToPreset(preset),
+      );
       btn.paddingRight = "4px";
       row.addControl(btn);
     });
@@ -170,7 +177,9 @@ export class UI {
     // ── RECORD ─────────────────────────────────────────────────────────────
     row.addControl(this.makeSectionPill("RECORD"));
 
-    this.freezeBtn = this.makeToolBtn("Freeze Scene", () => this.cameraController.toggleFreeze());
+    this.freezeBtn = this.makeToolBtn("Freeze Scene", () =>
+      this.cameraController.toggleFreeze(),
+    );
     this.freezeBtn.paddingRight = "4px";
     row.addControl(this.freezeBtn);
 
@@ -223,7 +232,7 @@ export class UI {
 
   private makeToolBtn(text: string, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton("tbtn-" + text, text);
-    btn.width = (text.length * 7 + 24) + "px";
+    btn.width = text.length * 7 + 24 + "px";
     btn.height = "28px";
     btn.fontSize = 11;
     btn.color = "#94A3B8";
@@ -237,7 +246,7 @@ export class UI {
   /** Compact coloured pill label that anchors each toolbar section */
   private makeSectionPill(text: string): Rectangle {
     const pill = new Rectangle();
-    pill.width = (text.length * 6.5 + 14) + "px";
+    pill.width = text.length * 6.5 + 14 + "px";
     pill.height = "18px";
     pill.cornerRadius = 9;
     pill.background = "#1E3A5F";
@@ -268,12 +277,12 @@ export class UI {
   private wrapWithLabel(control: Control, labelText: string): StackPanel {
     const wrap = new StackPanel();
     wrap.isVertical = false;
-    wrap.width = (labelText.length * 7 + 36) + "px";
+    wrap.width = labelText.length * 7 + 36 + "px";
     wrap.height = "28px";
 
     const lbl = new TextBlock();
     lbl.text = labelText;
-    lbl.width = (labelText.length * 7 + 6) + "px";
+    lbl.width = labelText.length * 7 + 6 + "px";
     lbl.height = "28px";
     lbl.color = "#94A3B8";
     lbl.fontSize = 11;
@@ -320,13 +329,16 @@ export class UI {
     const isSelected = this.engine.getSelectedKey() === arrow.key;
     const accentHex = arrow.display?.color?.toHexString() ?? "#2563EB";
 
+    // Height grows when selected to show the keymap hint row
+    const boxHeight = isSelected ? "148px" : "120px";
+
     const box = new Rectangle();
-    box.width = "260px";
-    box.height = "120px";
+    box.width = "270px";
+    box.height = boxHeight;
     box.thickness = isSelected ? 2 : 1;
     box.color = isSelected ? accentHex : "#334155";
     box.cornerRadius = 8;
-    box.background = isSelected ? "#334155EE" : "#1E293BCC";
+    box.background = isSelected ? "#1A2744EE" : "#1E293BCC";
     box.paddingLeft = "5px";
     box.paddingRight = "5px";
     box.paddingTop = "4px";
@@ -341,10 +353,10 @@ export class UI {
     stack.height = "100%";
     box.addControl(stack);
 
-    // ── Top row: label + axis lock + remove ──────────────────────────────
+    // ── Top row: label + axis locks + remove ────────────────────────────
     const topRow = new StackPanel();
     topRow.isVertical = false;
-    topRow.height = "26px";
+    topRow.height = "24px";
     stack.addControl(topRow);
 
     const label = new TextBlock();
@@ -372,7 +384,6 @@ export class UI {
         this.engine.toggleAxisLock(arrow.key, axis);
         this.refreshVectorList();
       });
-      this.axisLockBtns.set(lockKey, lockBtn);
       topRow.addControl(lockBtn);
     });
 
@@ -383,6 +394,7 @@ export class UI {
     removeBtn.color = "white";
     removeBtn.background = "#DC2626";
     removeBtn.cornerRadius = 4;
+    removeBtn.paddingLeft = "4px";
     removeBtn.onPointerUpObservable.add(() => {
       this.engine.removeVector(arrow.key);
       this.refreshVectorList();
@@ -391,22 +403,103 @@ export class UI {
 
     // ── Vector and origin inputs ─────────────────────────────────────────
     stack.addControl(this.createVecInputRow("V", arrow, arrow.value, "value"));
-    stack.addControl(this.createVecInputRow("O", arrow, arrow.origin, "origin"));
+    stack.addControl(
+      this.createVecInputRow("O", arrow, arrow.origin, "origin"),
+    );
 
-    // ── Magnitude readout ────────────────────────────────────────────────
-    const magRow = new StackPanel();
-    magRow.isVertical = false;
-    magRow.height = "20px";
-    stack.addControl(magRow);
+    // ── Bottom row: magnitude + overlay toggles ──────────────────────────
+    const bottomRow = new StackPanel();
+    bottomRow.isVertical = false;
+    bottomRow.height = "22px";
+    stack.addControl(bottomRow);
 
     const magLabel = new TextBlock();
-    magLabel.text = `|v| = ${arrow.value.length().toFixed(3)}`;
-    magLabel.color = "#94A3B8";
-    magLabel.fontSize = 10;
+    magLabel.text = `|v|=${arrow.value.length().toFixed(2)}`;
+    magLabel.color = "#64748B";
+    magLabel.fontSize = 9.5;
     magLabel.fontFamily = "monospace";
-    magLabel.width = "120px";
+    magLabel.width = "90px";
     magLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    magRow.addControl(magLabel);
+    bottomRow.addControl(magLabel);
+
+    // Components toggle
+    const showComp = arrow.showComponents !== false;
+    const compBtn = Button.CreateSimpleButton("comp-" + arrow.key, "XYZ");
+    compBtn.width = "30px";
+    compBtn.height = "16px";
+    compBtn.fontSize = 8;
+    compBtn.color = showComp ? "#000" : "#475569";
+    compBtn.background = showComp ? "#38BDF8" : "#1E293B";
+    compBtn.cornerRadius = 3;
+    compBtn.thickness = 1;
+    compBtn.onPointerUpObservable.add(() => {
+      this.engine.updateVector(arrow.key, { showComponents: !showComp } as any);
+      this.refreshVectorList();
+    });
+    bottomRow.addControl(compBtn);
+
+    // Angle toggle
+    const showAngle = arrow.showAngle !== false;
+    const angleBtn = Button.CreateSimpleButton("angle-" + arrow.key, "∠");
+    angleBtn.width = "22px";
+    angleBtn.height = "16px";
+    angleBtn.fontSize = 9;
+    angleBtn.color = showAngle ? "#000" : "#475569";
+    angleBtn.background = showAngle ? "#A78BFA" : "#1E293B";
+    angleBtn.cornerRadius = 3;
+    angleBtn.thickness = 1;
+    angleBtn.paddingLeft = "3px";
+    angleBtn.onPointerUpObservable.add(() => {
+      this.engine.updateVector(arrow.key, { showAngle: !showAngle } as any);
+      this.refreshVectorList();
+    });
+    bottomRow.addControl(angleBtn);
+
+    // ── Keymap hint (only when selected) ────────────────────────────────
+    if (isSelected) {
+      const hint = new Rectangle();
+      hint.height = "22px";
+      hint.thickness = 1;
+      hint.color = "#1E3A5F";
+      hint.cornerRadius = 4;
+      hint.background = "#0F172A";
+      hint.paddingTop = "2px";
+      stack.addControl(hint);
+
+      const hintRow = new StackPanel();
+      hintRow.isVertical = false;
+      hint.addControl(hintRow);
+
+      const makeHint = (key: string, desc: string, color = "#7DD3FC") => {
+        const keyBadge = new Rectangle();
+        keyBadge.width = "18px";
+        keyBadge.height = "14px";
+        keyBadge.cornerRadius = 3;
+        keyBadge.background = "#1E3A5F";
+        keyBadge.thickness = 0;
+        keyBadge.paddingLeft = "4px";
+        const keyTxt = new TextBlock();
+        keyTxt.text = key;
+        keyTxt.color = color;
+        keyTxt.fontSize = 8.5;
+        keyTxt.fontStyle = "bold";
+        keyBadge.addControl(keyTxt);
+
+        const descTxt = new TextBlock();
+        descTxt.text = desc;
+        descTxt.color = "#475569";
+        descTxt.fontSize = 8;
+        descTxt.width = desc.length * 5 + 4 + "px";
+        descTxt.paddingLeft = "2px";
+        descTxt.paddingRight = "6px";
+
+        hintRow.addControl(keyBadge);
+        hintRow.addControl(descTxt);
+      };
+
+      makeHint("F", "Focus");
+      makeHint("Esc", "Reset", "#94A3B8");
+    }
 
     return box;
   }
@@ -431,7 +524,8 @@ export class UI {
     const axisColors = { x: "#FCA5A5", y: "#86EFAC", z: "#93C5FD" };
 
     (["x", "y", "z"] as const).forEach((axis) => {
-      const isLocked = field === "value" && (arrow.lockedAxes?.includes(axis) ?? false);
+      const isLocked =
+        field === "value" && (arrow.lockedAxes?.includes(axis) ?? false);
 
       const input = new InputText();
       input.width = "48px";
@@ -450,7 +544,9 @@ export class UI {
         if (isNaN(val)) return;
         const updatedVec = vec.clone();
         updatedVec[axis] = val;
-        this.engine.updateVector(arrow.key, { [field]: updatedVec } as Partial<Arrow>);
+        this.engine.updateVector(arrow.key, {
+          [field]: updatedVec,
+        } as Partial<Arrow>);
       });
 
       row.addControl(input);
@@ -540,17 +636,27 @@ export class UI {
     opsRow.spacing = 4;
     leftCol.addControl(opsRow);
 
-    type OpDef = { label: string; op: "add" | "subtract" | "cross" | "projection"; color: string; tip: string };
+    type OpDef = {
+      label: string;
+      op: "add" | "subtract" | "cross" | "projection";
+      color: string;
+      tip: string;
+    };
     const opDefs: OpDef[] = [
       { label: "A + B", op: "add", color: "#22C55E", tip: "Add" },
       { label: "A − B", op: "subtract", color: "#F87171", tip: "Subtract" },
       { label: "A × B", op: "cross", color: "#A78BFA", tip: "Cross product" },
-      { label: "proj", op: "projection", color: "#38BDF8", tip: "Projection of A onto B" },
+      {
+        label: "proj",
+        op: "projection",
+        color: "#38BDF8",
+        tip: "Projection of A onto B",
+      },
     ];
 
-    opDefs.forEach(({ label, op, color }) => {
+    opDefs.forEach(({ label, op, color, tip }) => {
       const b = Button.CreateSimpleButton("op-" + op, label);
-      b.width = (label.length * 6.5 + 18) + "px";
+      b.width = label.length * 6.5 + 18 + "px";
       b.height = "26px";
       b.fontSize = 10;
       b.color = color;
@@ -605,7 +711,10 @@ export class UI {
     resMag.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     resultCol.addControl(resMag);
 
-    const addToSceneBtn = Button.CreateSimpleButton("addResult", "+ Add to scene");
+    const addToSceneBtn = Button.CreateSimpleButton(
+      "addResult",
+      "+ Add to scene",
+    );
     addToSceneBtn.width = "120px";
     addToSceneBtn.height = "20px";
     addToSceneBtn.fontSize = 10;
@@ -642,12 +751,15 @@ export class UI {
       const count = this.engine.getVectors().length + 1;
       const key = `${pendingLabel}-${count}`;
       this.engine.addVector({
-        key, label: key, type: "derived",
+        key,
+        label: key,
+        type: "derived",
         origin: BABYLON.Vector3.Zero(),
         value: pendingResult.clone(),
         display: { color: this.randomLightColor3() },
         vector: null,
-        dependencies: [], operation: undefined,
+        dependencies: [],
+        operation: undefined,
       });
       this.refreshVectorList();
     });
@@ -655,22 +767,38 @@ export class UI {
     const perform = (op: "add" | "subtract" | "cross" | "projection") => {
       const a = this.engine.getVector(leftSelect.text.trim());
       const b = this.engine.getVector(rightSelect.text.trim());
-      if (!a?.value || !b?.value) { displayResult(null, ""); return; }
+      if (!a?.value || !b?.value) {
+        displayResult(null, "");
+        return;
+      }
 
       let out: BABYLON.Vector3;
       switch (op) {
-        case "add": out = a.value.add(b.value); break;
-        case "subtract": out = a.value.subtract(b.value); break;
-        case "cross": out = BABYLON.Vector3.Cross(a.value, b.value); break;
+        case "add":
+          out = a.value.add(b.value);
+          break;
+        case "subtract":
+          out = a.value.subtract(b.value);
+          break;
+        case "cross":
+          out = BABYLON.Vector3.Cross(a.value, b.value);
+          break;
         case "projection": {
           const d = b.value.lengthSquared();
-          out = d === 0 ? BABYLON.Vector3.Zero()
-            : b.value.scale(BABYLON.Vector3.Dot(a.value, b.value) / d);
+          out =
+            d === 0
+              ? BABYLON.Vector3.Zero()
+              : b.value.scale(BABYLON.Vector3.Dot(a.value, b.value) / d);
           break;
         }
       }
 
-      const labelMap = { add: "Sum", subtract: "Diff", cross: "Cross", projection: "Proj" };
+      const labelMap = {
+        add: "Sum",
+        subtract: "Diff",
+        cross: "Cross",
+        projection: "Proj",
+      };
       displayResult(out!, labelMap[op]);
     };
 
@@ -707,24 +835,31 @@ export class UI {
       const h = Math.floor(Math.random() * 360);
       if (this.lastHue === null) return h;
       const diff = Math.abs(h - this.lastHue);
-      return diff >= minHueGap && Math.abs(diff - 360) >= minHueGap ? h : pickHue();
+      return diff >= minHueGap && Math.abs(diff - 360) >= minHueGap
+        ? h
+        : pickHue();
     };
     const h = pickHue();
     this.lastHue = h;
     const s = 60 + Math.random() * 40;
     const l = 72 + Math.random() * 16;
-    const hNorm = h / 360, sNorm = s / 100, lNorm = l / 100;
+    const hNorm = h / 360,
+      sNorm = s / 100,
+      lNorm = l / 100;
     const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
       if (t < 1 / 6) return p + (q - p) * 6 * t;
       if (t < 1 / 2) return q;
       if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
       return p;
     };
     let r, g, b;
-    if (sNorm === 0) { r = g = b = lNorm; }
-    else {
-      const q = lNorm < 0.5 ? lNorm * (1 + sNorm) : lNorm + sNorm - lNorm * sNorm;
+    if (sNorm === 0) {
+      r = g = b = lNorm;
+    } else {
+      const q =
+        lNorm < 0.5 ? lNorm * (1 + sNorm) : lNorm + sNorm - lNorm * sNorm;
       const p = 2 * lNorm - q;
       r = hue2rgb(p, q, hNorm + 1 / 3);
       g = hue2rgb(p, q, hNorm);
