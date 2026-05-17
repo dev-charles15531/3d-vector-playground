@@ -11,7 +11,6 @@ import {
   Button,
   ScrollViewer,
   Checkbox,
-  Grid,
 } from "@babylonjs/gui";
 
 import { VectorEngine } from "./VectorEngine";
@@ -57,12 +56,14 @@ export class UI {
 
     // Wire camera controller callbacks to update button styles
     this.cameraController.onFreezeChanged = (frozen) => {
-      this.freezeBtn.background = frozen ? "#EF4444" : "#334155";
-      (this.freezeBtn.children[0] as TextBlock).text = frozen ? "▶ Unfreeze" : "❄ Freeze";
+      this.freezeBtn.background = frozen ? "#EF4444" : "#1E293B";
+      this.freezeBtn.color = frozen ? "#fff" : "#94A3B8";
+      (this.freezeBtn.children[0] as TextBlock).text = frozen ? "Unfreeze" : "Freeze Scene";
     };
 
     this.cameraController.onHighContrastChanged = (enabled) => {
-      this.hcBtn.background = enabled ? "#F59E0B" : "#334155";
+      this.hcBtn.background = enabled ? "#92400E" : "#1E293B";
+      this.hcBtn.color = enabled ? "#FCD34D" : "#94A3B8";
     };
   }
 
@@ -97,13 +98,16 @@ export class UI {
   }
 
   // ── Toolbar ──────────────────────────────────────────────────────────────
+  // Layout: [section pill] [btn] [btn] ... | [section pill] [btn] ...
+  // Each section is visually separated by a vertical rule. Buttons have
+  // consistent 6px right margin so they don't stack against the divider.
 
   private buildToolbar() {
     const bar = new Rectangle();
     bar.width = "100%";
-    bar.height = "42px";
+    bar.height = "44px";
     bar.thickness = 0;
-    bar.background = "#0A0F1ECC";
+    bar.background = "#090D1BF2";
     bar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.advancedTexture.addControl(bar);
 
@@ -111,65 +115,79 @@ export class UI {
     row.isVertical = false;
     row.width = "100%";
     row.height = "100%";
-    row.paddingLeft = "8px";
-    row.paddingTop = "5px";
-    row.paddingBottom = "5px";
+    row.paddingLeft = "10px";
+    row.paddingTop = "6px";
+    row.paddingBottom = "6px";
     bar.addControl(row);
 
-    // ── Section: Mode ──────────────────────────────────────────────────────
-    row.addControl(this.makeSectionLabel("MODE"));
+    // ── MODE ───────────────────────────────────────────────────────────────
+    row.addControl(this.makeSectionPill("MODE"));
 
     const htCheck = new Checkbox();
-    htCheck.width = "16px";
-    htCheck.height = "16px";
+    htCheck.width = "15px";
+    htCheck.height = "15px";
     htCheck.color = "#38BDF8";
     htCheck.background = "#1E293B";
     htCheck.isChecked = this.engine.getHeadToTail();
     htCheck.onIsCheckedChangedObservable.add((v) => this.engine.setHeadToTail(v));
-    row.addControl(this.wrapWithLabel(htCheck, "Head-Tail"));
+    const htWrap = this.wrapWithLabel(htCheck, "Head-to-Tail");
+    htWrap.paddingRight = "10px";
+    row.addControl(htWrap);
 
     row.addControl(this.makeDivider());
 
-    // ── Section: Snap ─────────────────────────────────────────────────────
-    row.addControl(this.makeSectionLabel("SNAP"));
-    this.snapBtn = this.makeToolBtn("⊞ Grid", () => {
+    // ── DRAG ───────────────────────────────────────────────────────────────
+    row.addControl(this.makeSectionPill("DRAG"));
+
+    this.snapBtn = this.makeToolBtn("Snap to Integer", () => {
       const on = this.dragController.getSnapToGrid();
       this.dragController.setSnapToGrid(!on);
-      this.snapBtn.background = !on ? "#22C55E" : "#334155";
+      this.snapBtn.background = !on ? "#22C55E" : "#1E293B";
+      this.snapBtn.color = !on ? "#000" : "#94A3B8";
     });
+    this.snapBtn.paddingRight = "6px";
     row.addControl(this.snapBtn);
 
     row.addControl(this.makeDivider());
 
-    // ── Section: Camera presets ────────────────────────────────────────────
-    row.addControl(this.makeSectionLabel("VIEW"));
-    (["top", "front", "side", "free"] as CameraPreset[]).forEach((preset) => {
-      const label = { top: "⬆ Top", front: "▣ Front", side: "◧ Side", free: "◎ 3D" }[preset];
-      row.addControl(this.makeToolBtn(label, () => this.cameraController.goToPreset(preset)));
+    // ── VIEW ───────────────────────────────────────────────────────────────
+    row.addControl(this.makeSectionPill("VIEW"));
+
+    const viewPresets: { preset: CameraPreset; label: string }[] = [
+      { preset: "top", label: "Top" },
+      { preset: "front", label: "Front" },
+      { preset: "side", label: "Side" },
+      { preset: "free", label: "3D" },
+    ];
+    viewPresets.forEach(({ preset, label }) => {
+      const btn = this.makeToolBtn(label, () => this.cameraController.goToPreset(preset));
+      btn.paddingRight = "4px";
+      row.addControl(btn);
     });
 
     row.addControl(this.makeDivider());
 
-    // ── Section: Freeze / HC ──────────────────────────────────────────────
-    row.addControl(this.makeSectionLabel("RECORD"));
+    // ── RECORD ─────────────────────────────────────────────────────────────
+    row.addControl(this.makeSectionPill("RECORD"));
 
-    this.freezeBtn = this.makeToolBtn("❄ Freeze", () => this.cameraController.toggleFreeze());
+    this.freezeBtn = this.makeToolBtn("Freeze Scene", () => this.cameraController.toggleFreeze());
+    this.freezeBtn.paddingRight = "4px";
     row.addControl(this.freezeBtn);
 
-    this.hcBtn = this.makeToolBtn("◐ Hi-Con", () => {
-      const on = this.cameraController.toggleHighContrast();
-      // In high-contrast mode, bump up arrow emissive globally
-      // Signal is handled via onHighContrastChanged callback in constructor
+    this.hcBtn = this.makeToolBtn("High Contrast", () => {
+      this.cameraController.toggleHighContrast();
     });
+    this.hcBtn.paddingRight = "6px";
     row.addControl(this.hcBtn);
 
     row.addControl(this.makeDivider());
 
-    // ── Section: Share ─────────────────────────────────────────────────────
-    row.addControl(this.makeSectionLabel("SHARE"));
-    const shareBtn = this.makeToolBtn("⎘ Copy URL", () => {
-      const url = StateSerializer.encode(this.engine.getVectors());
-      this.showToast("URL copied!");
+    // ── SHARE ──────────────────────────────────────────────────────────────
+    row.addControl(this.makeSectionPill("SHARE"));
+
+    const shareBtn = this.makeToolBtn("Copy Link", () => {
+      StateSerializer.encode(this.engine.getVectors());
+      this.showToast("Scene URL copied to clipboard");
     });
     row.addControl(shareBtn);
   }
@@ -205,53 +223,61 @@ export class UI {
 
   private makeToolBtn(text: string, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton("tbtn-" + text, text);
-    btn.width = (text.length * 7.5 + 22) + "px";
+    btn.width = (text.length * 7 + 24) + "px";
     btn.height = "28px";
     btn.fontSize = 11;
-    btn.color = "white";
-    btn.background = "#334155";
+    btn.color = "#94A3B8";
+    btn.background = "#1E293B";
     btn.cornerRadius = 5;
-    btn.paddingLeft = "4px";
-    btn.paddingRight = "4px";
+    btn.thickness = 1;
     btn.onPointerUpObservable.add(onClick);
     return btn;
   }
 
-  private makeSectionLabel(text: string): TextBlock {
+  /** Compact coloured pill label that anchors each toolbar section */
+  private makeSectionPill(text: string): Rectangle {
+    const pill = new Rectangle();
+    pill.width = (text.length * 6.5 + 14) + "px";
+    pill.height = "18px";
+    pill.cornerRadius = 9;
+    pill.background = "#1E3A5F";
+    pill.thickness = 0;
+    pill.paddingRight = "6px";
+
     const lbl = new TextBlock();
     lbl.text = text;
-    lbl.width = (text.length * 7 + 16) + "px";
-    lbl.height = "28px";
-    lbl.color = "#64748B";
-    lbl.fontSize = 9;
+    lbl.color = "#7DD3FC";
+    lbl.fontSize = 8.5;
     lbl.fontFamily = "monospace";
-    return lbl;
+    lbl.fontStyle = "bold";
+    pill.addControl(lbl);
+    return pill;
   }
 
   private makeDivider(): Rectangle {
     const d = new Rectangle();
     d.width = "1px";
-    d.height = "20px";
-    d.background = "#334155";
+    d.height = "22px";
+    d.background = "#1E293B";
     d.thickness = 0;
-    d.paddingLeft = "6px";
-    d.paddingRight = "6px";
+    d.paddingLeft = "8px";
+    d.paddingRight = "8px";
     return d;
   }
 
   private wrapWithLabel(control: Control, labelText: string): StackPanel {
     const wrap = new StackPanel();
     wrap.isVertical = false;
-    wrap.width = (labelText.length * 7.5 + 40) + "px";
+    wrap.width = (labelText.length * 7 + 36) + "px";
     wrap.height = "28px";
 
     const lbl = new TextBlock();
     lbl.text = labelText;
-    lbl.width = (labelText.length * 7.5 + 4) + "px";
+    lbl.width = (labelText.length * 7 + 6) + "px";
     lbl.height = "28px";
     lbl.color = "#94A3B8";
     lbl.fontSize = 11;
-    lbl.paddingLeft = "4px";
+    lbl.paddingLeft = "5px";
 
     wrap.addControl(control);
     wrap.addControl(lbl);
@@ -434,157 +460,219 @@ export class UI {
   }
 
   // ── Operations panel ─────────────────────────────────────────────────────
+  // Layout:
+  //   [A input] [op buttons: + − × proj] [B input]   →   Result box
+  //   Result shows: vector components + magnitude + a "Add to scene" button
 
   private addOperationsPanel() {
     const opBox = new Rectangle();
-    opBox.width = "320px";
+    opBox.width = "400px";
     opBox.height = "120px";
     opBox.thickness = 1;
-    opBox.color = "#334155";
+    opBox.color = "#1E3A5F";
     opBox.cornerRadius = 8;
-    opBox.background = "#111827CC";
-    opBox.paddingLeft = "8px";
-    opBox.paddingRight = "8px";
+    opBox.background = "#09101EF0";
+    opBox.paddingLeft = "10px";
+    opBox.paddingRight = "10px";
     opBox.paddingTop = "6px";
     opBox.paddingBottom = "6px";
 
-    const opStack = new StackPanel();
-    opStack.isVertical = false;
-    opStack.height = "100%";
-    opBox.addControl(opStack);
+    const outer = new StackPanel();
+    outer.isVertical = true;
+    outer.height = "100%";
+    opBox.addControl(outer);
 
-    const controls = new StackPanel();
-    controls.width = "190px";
-    controls.isVertical = true;
-    opStack.addControl(controls);
+    // ── Header ────────────────────────────────────────────────────────────
+    const header = new TextBlock();
+    header.text = "OPERATIONS";
+    header.height = "14px";
+    header.color = "#7DD3FC";
+    header.fontSize = 8.5;
+    header.fontFamily = "monospace";
+    header.fontStyle = "bold";
+    header.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    outer.addControl(header);
 
-    const selectorRow = new StackPanel();
-    selectorRow.isVertical = false;
-    selectorRow.height = "30px";
+    // ── Main row: [A] [ops] [B]  |  result ───────────────────────────────
+    const mainRow = new StackPanel();
+    mainRow.isVertical = false;
+    mainRow.height = "88px";
+    outer.addControl(mainRow);
 
-    const makeInput = (placeholder: string) => {
+    // Left side: inputs + op buttons
+    const leftCol = new StackPanel();
+    leftCol.isVertical = true;
+    leftCol.width = "230px";
+    mainRow.addControl(leftCol);
+
+    // Input row
+    const inputRow = new StackPanel();
+    inputRow.isVertical = false;
+    inputRow.height = "28px";
+    inputRow.paddingBottom = "4px";
+    leftCol.addControl(inputRow);
+
+    const makeVecInput = (placeholder: string) => {
       const i = new InputText();
-      i.width = "88px";
+      i.width = "100px";
       i.height = "24px";
       i.placeholderText = placeholder;
       i.text = "";
       i.fontSize = 11;
-      i.color = "#fff";
-      i.placeholderColor = "#9CA3AF";
-      i.background = "#334155";
-      i.focusedBackground = "#334155";
+      i.color = "#E2E8F0";
+      i.placeholderColor = "#475569";
+      i.background = "#1E293B";
+      i.focusedBackground = "#1E293B";
+      i.thickness = 1;
+      i.paddingRight = "4px";
       return i;
     };
 
-    const leftSelect = makeInput("Vector A");
-    const rightSelect = makeInput("Vector B");
-    selectorRow.addControl(leftSelect);
-    selectorRow.addControl(rightSelect);
-    controls.addControl(selectorRow);
+    const leftSelect = makeVecInput("Vector A  (key)");
+    const rightSelect = makeVecInput("Vector B  (key)");
+    inputRow.addControl(leftSelect);
+    inputRow.addControl(rightSelect);
 
+    // Op buttons row
     const opsRow = new StackPanel();
     opsRow.isVertical = false;
     opsRow.height = "32px";
     opsRow.spacing = 4;
+    leftCol.addControl(opsRow);
 
-    const makeOpBtn = (text: string) => {
-      const b = Button.CreateSimpleButton("op-" + text, text);
-      b.width = "42px";
+    type OpDef = { label: string; op: "add" | "subtract" | "cross" | "projection"; color: string; tip: string };
+    const opDefs: OpDef[] = [
+      { label: "A + B", op: "add", color: "#22C55E", tip: "Add" },
+      { label: "A − B", op: "subtract", color: "#F87171", tip: "Subtract" },
+      { label: "A × B", op: "cross", color: "#A78BFA", tip: "Cross product" },
+      { label: "proj", op: "projection", color: "#38BDF8", tip: "Projection of A onto B" },
+    ];
+
+    opDefs.forEach(({ label, op, color }) => {
+      const b = Button.CreateSimpleButton("op-" + op, label);
+      b.width = (label.length * 6.5 + 18) + "px";
       b.height = "26px";
-      b.fontSize = 11;
-      b.color = "white";
-      b.background = "#0EA5E9";
-      b.cornerRadius = 4;
-      return b;
+      b.fontSize = 10;
+      b.color = color;
+      b.background = "#1E293B";
+      b.cornerRadius = 5;
+      b.thickness = 1;
+      b.onPointerUpObservable.add(() => perform(op));
+      opsRow.addControl(b);
+    });
+
+    // Divider
+    const vDiv = new Rectangle();
+    vDiv.width = "1px";
+    vDiv.height = "80px";
+    vDiv.background = "#1E3A5F";
+    vDiv.thickness = 0;
+    vDiv.paddingLeft = "8px";
+    vDiv.paddingRight = "8px";
+    mainRow.addControl(vDiv);
+
+    // Result column
+    const resultCol = new StackPanel();
+    resultCol.isVertical = true;
+    resultCol.width = "140px";
+    mainRow.addControl(resultCol);
+
+    const resTitle = new TextBlock();
+    resTitle.text = "Result";
+    resTitle.height = "14px";
+    resTitle.color = "#FACC15";
+    resTitle.fontSize = 10;
+    resTitle.fontStyle = "bold";
+    resTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    resultCol.addControl(resTitle);
+
+    const resCoords = new TextBlock();
+    resCoords.text = "—";
+    resCoords.height = "42px";
+    resCoords.color = "#E2E8F0";
+    resCoords.fontSize = 10;
+    resCoords.fontFamily = "monospace";
+    resCoords.textWrapping = true;
+    resCoords.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    resultCol.addControl(resCoords);
+
+    const resMag = new TextBlock();
+    resMag.text = "";
+    resMag.height = "13px";
+    resMag.color = "#64748B";
+    resMag.fontSize = 9;
+    resMag.fontFamily = "monospace";
+    resMag.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    resultCol.addControl(resMag);
+
+    const addToSceneBtn = Button.CreateSimpleButton("addResult", "+ Add to scene");
+    addToSceneBtn.width = "120px";
+    addToSceneBtn.height = "20px";
+    addToSceneBtn.fontSize = 10;
+    addToSceneBtn.color = "#22C55E";
+    addToSceneBtn.background = "#052E16";
+    addToSceneBtn.cornerRadius = 4;
+    addToSceneBtn.thickness = 1;
+    addToSceneBtn.isEnabled = false;
+    addToSceneBtn.alpha = 0.4;
+    resultCol.addControl(addToSceneBtn);
+
+    // ── Logic ─────────────────────────────────────────────────────────────
+    let pendingResult: BABYLON.Vector3 | null = null;
+    let pendingLabel = "";
+
+    const displayResult = (vec: BABYLON.Vector3 | null, opLabel: string) => {
+      pendingResult = vec;
+      pendingLabel = opLabel;
+      if (!vec) {
+        resCoords.text = "Invalid —\ncheck keys";
+        resMag.text = "";
+        addToSceneBtn.isEnabled = false;
+        addToSceneBtn.alpha = 0.35;
+        return;
+      }
+      resCoords.text = `x ${vec.x.toFixed(2)}\ny ${vec.y.toFixed(2)}\nz ${vec.z.toFixed(2)}`;
+      resMag.text = `|v| = ${vec.length().toFixed(3)}`;
+      addToSceneBtn.isEnabled = true;
+      addToSceneBtn.alpha = 1;
     };
 
-    const addBtn = makeOpBtn("+");
-    const subBtn = makeOpBtn("−");
-    const crossBtn = makeOpBtn("×");
-    const projBtn = makeOpBtn("proj");
-    opsRow.addControl(addBtn);
-    opsRow.addControl(subBtn);
-    opsRow.addControl(crossBtn);
-    opsRow.addControl(projBtn);
-    controls.addControl(opsRow);
-
-    // Result panel
-    const resultPanel = new StackPanel();
-    resultPanel.width = "120px";
-    resultPanel.isVertical = true;
-    opStack.addControl(resultPanel);
-
-    const resLabel = new TextBlock();
-    resLabel.text = "Result:";
-    resLabel.color = "#FACC15";
-    resLabel.fontSize = 11;
-    resLabel.height = "18px";
-    resultPanel.addControl(resLabel);
-
-    const resText = new TextBlock();
-    resText.text = "—";
-    resText.color = "#fff";
-    resText.fontSize = 11;
-    resText.fontFamily = "monospace";
-    resText.textWrapping = true;
-    resText.height = "72px";
-    resultPanel.addControl(resText);
-
-    const resolveVector = (input: string) => {
-      if (!input) return undefined;
-      return this.engine.getVector(input.trim());
-    };
-
-    const displayResult = (vec?: BABYLON.Vector3 | null) => {
-      if (!vec) { resText.text = "Invalid"; return; }
-      resText.text = `x: ${vec.x.toFixed(3)}\ny: ${vec.y.toFixed(3)}\nz: ${vec.z.toFixed(3)}`;
-    };
-
-    const pushResult = (vec: BABYLON.Vector3, labelPrefix: string) => {
+    addToSceneBtn.onPointerUpObservable.add(() => {
+      if (!pendingResult) return;
       const count = this.engine.getVectors().length + 1;
-      const key = `${labelPrefix}-${count}`;
+      const key = `${pendingLabel}-${count}`;
       this.engine.addVector({
-        key,
-        label: key,
-        type: "derived",
+        key, label: key, type: "derived",
         origin: BABYLON.Vector3.Zero(),
-        value: vec,
+        value: pendingResult.clone(),
         display: { color: this.randomLightColor3() },
         vector: null,
-        dependencies: [],
-        operation: undefined,
+        dependencies: [], operation: undefined,
       });
       this.refreshVectorList();
-    };
+    });
 
     const perform = (op: "add" | "subtract" | "cross" | "projection") => {
-      const a = resolveVector(leftSelect.text);
-      const b = resolveVector(rightSelect.text);
-      if (!a?.value || !b?.value) { displayResult(undefined); return; }
+      const a = this.engine.getVector(leftSelect.text.trim());
+      const b = this.engine.getVector(rightSelect.text.trim());
+      if (!a?.value || !b?.value) { displayResult(null, ""); return; }
 
-      let out: BABYLON.Vector3 | undefined;
+      let out: BABYLON.Vector3;
       switch (op) {
         case "add": out = a.value.add(b.value); break;
         case "subtract": out = a.value.subtract(b.value); break;
         case "cross": out = BABYLON.Vector3.Cross(a.value, b.value); break;
         case "projection": {
-          const denom = b.value.lengthSquared();
-          out = denom === 0 ? BABYLON.Vector3.Zero()
-            : b.value.scale(BABYLON.Vector3.Dot(a.value, b.value) / denom);
+          const d = b.value.lengthSquared();
+          out = d === 0 ? BABYLON.Vector3.Zero()
+            : b.value.scale(BABYLON.Vector3.Dot(a.value, b.value) / d);
           break;
         }
       }
 
-      if (out) {
-        displayResult(out);
-        pushResult(out, op === "add" ? "Sum" : op === "subtract" ? "Diff" : op === "cross" ? "Cross" : "Proj");
-      }
+      const labelMap = { add: "Sum", subtract: "Diff", cross: "Cross", projection: "Proj" };
+      displayResult(out!, labelMap[op]);
     };
-
-    addBtn.onPointerUpObservable.add(() => perform("add"));
-    subBtn.onPointerUpObservable.add(() => perform("subtract"));
-    crossBtn.onPointerUpObservable.add(() => perform("cross"));
-    projBtn.onPointerUpObservable.add(() => perform("projection"));
 
     this.contentPanel.addControl(opBox);
   }

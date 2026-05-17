@@ -63,8 +63,6 @@ export class VectorOverlays {
 
     // Intermediate corners for the "box" edges
     const xzCorner = origin.add(new BABYLON.Vector3(x, 0, z));   // floor corner
-    const xTipUp = xTip.add(new BABYLON.Vector3(0, y, 0));      // = tip
-    const zTipUp = zTip.add(new BABYLON.Vector3(0, y, 0));      // = tip from z side
 
     const RED = new BABYLON.Color3(0.95, 0.25, 0.25);
     const GREEN = new BABYLON.Color3(0.25, 0.90, 0.35);

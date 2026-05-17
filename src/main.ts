@@ -49,16 +49,20 @@ class Playground {
     spot.intensity = 0.8;
 
     // ── Ground ────────────────────────────────────────────────────────────
+    // Quiet floor — just enough to give spatial grounding without competing
+    // with the vectors. Very low opacity, dark base, barely-visible lines.
     const ground = BABYLON.MeshBuilder.CreateGround(
       "ground",
-      { width: 500, height: 500 },
+      { width: 200, height: 200 },
       scene,
     );
     const grid = new GridMaterial("grid", scene);
     grid.gridRatio = 1;
-    grid.opacity = 0.65;
-    grid.mainColor = new BABYLON.Color3(0.2, 0.2, 0.25);
-    grid.lineColor = new BABYLON.Color3(0.35, 0.35, 0.45);
+    grid.opacity = 0.28;
+    grid.mainColor = new BABYLON.Color3(0.05, 0.06, 0.09);
+    grid.lineColor = new BABYLON.Color3(0.18, 0.20, 0.28);
+    grid.majorUnitFrequency = 5;
+    grid.minorUnitVisibility = 0.2;
     ground.material = grid;
 
     // ── Lab ────────────────────────────────────────────────────────────────
@@ -117,7 +121,7 @@ class Playground {
 
     // ── High-contrast mode ────────────────────────────────────────────────
     // When enabled, boost emissive on all arrows for better recording visibility
-    cameraController.onHighContrastChanged = (enabled: boolean) => {
+    cameraController.onHighContrastChanged = (enabled) => {
       vecEngine.getVectors().forEach((v) => {
         if (!v.vector) return;
         const meshes = v.vector.getMeshes();
