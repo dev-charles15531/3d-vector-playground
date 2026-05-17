@@ -104,15 +104,6 @@ export class Lab {
       ],
     ];
 
-    // const xLine = this.createFaintDashedAxis("lines", { pts: points[0] }, this.scene);
-    // xLine.color = new BABYLON.Color3(1, 0, 0); // Red line
-
-    // const yLine = BABYLON.MeshBuilder.CreateLines("lines", { points: points[1] }, this.scene);
-    // yLine.color = new BABYLON.Color3(0, 1, 0); // Green line
-
-    // const zLine = BABYLON.MeshBuilder.CreateLines("lines", { points: points[2] }, this.scene);
-    // zLine.color = new BABYLON.Color3(0, 0, 1); // Blue line
-
     const faintGray = new BABYLON.Color3(0.35, 0.35, 0.35);
     this.createFaintDashedAxis.call(this, "xAxis", points[0], faintGray);
     this.createFaintDashedAxis.call(this, "yAxis", points[1], faintGray);

@@ -1,3 +1,5 @@
+// VectorArrow.ts
+
 import { type Arrow } from "./types";
 import * as BABYLON from "@babylonjs/core";
 
@@ -23,41 +25,52 @@ export class VectorArrow {
       headColor?: BABYLON.Color4;
     } = {},
     arrowStateObj: Arrow,
-    defaultOriginHeight: number
+    defaultOriginHeight: number,
   ) {
-    this.root = new BABYLON.TransformNode(`arrow-root-${arrowStateObj.key}`, scene);
+    this.root = new BABYLON.TransformNode(
+      `arrow-root-${arrowStateObj.key}`,
+      scene,
+    );
 
     const shaftDiameter = options.shaftDiameter ?? 0.08;
     const headDiameter = options.headDiameter ?? 0.16;
 
     this.headHeight = options.headHeight ?? 0.4;
-    this.shaftHeight = 1; // normalized (we scale later)
+    this.shaftHeight = 1;
 
     // SHAFT
-    this.shaft = BABYLON.MeshBuilder.CreateCylinder("shaft", {
-      height: this.shaftHeight,
-      diameter: shaftDiameter
-    }, scene);
+    this.shaft = BABYLON.MeshBuilder.CreateCylinder(
+      `shaft-${arrowStateObj.key}`,
+      {
+        height: this.shaftHeight,
+        diameter: shaftDiameter,
+      },
+      scene,
+    );
 
-    // base at y=0
     this.shaft.position.y = this.shaftHeight / 2;
     this.shaft.parent = this.root;
 
     // HEAD
-    this.head = BABYLON.MeshBuilder.CreateCylinder("head", {
-      height: this.headHeight,
-      diameterTop: 0,
-      diameterBottom: headDiameter
-    }, scene);
+    this.head = BABYLON.MeshBuilder.CreateCylinder(
+      `head-${arrowStateObj.key}`,
+      {
+        height: this.headHeight,
+        diameterTop: 0,
+        diameterBottom: headDiameter,
+      },
+      scene,
+    );
 
     this.head.parent = this.root;
 
     // MATERIALS
-    const shaftMat = new BABYLON.StandardMaterial("shaftMat", scene);
-    shaftMat.diffuseColor = options.shaftColor ?? new BABYLON.Color3(0.2, 0.6, 1);
+    const shaftMat = new BABYLON.StandardMaterial(`shaftMat-${arrowStateObj.key}`, scene);
+    shaftMat.diffuseColor =
+      options.shaftColor ?? new BABYLON.Color3(0.2, 0.6, 1);
     this.shaft.material = shaftMat;
 
-    const headMat = new BABYLON.StandardMaterial("headMat", scene);
+    const headMat = new BABYLON.StandardMaterial(`headMat-${arrowStateObj.key}`, scene);
     const hc = options.headColor;
     headMat.diffuseColor = hc
       ? new BABYLON.Color3(hc.r, hc.g, hc.b)
@@ -67,8 +80,17 @@ export class VectorArrow {
     this.arrowStateObj = arrowStateObj;
     this.defaultOriginHeight = defaultOriginHeight;
 
-    // initial state
     this.update(this.arrowStateObj.origin, this.arrowStateObj.value);
+  }
+
+  /** Return all meshes that should be pickable for this arrow */
+  public getMeshes(): BABYLON.Mesh[] {
+    return [this.shaft, this.head];
+  }
+
+  /** Return the key of the arrow this VectorArrow represents */
+  public getArrowKey(): string {
+    return this.arrowStateObj.key;
   }
 
   public update(origin: BABYLON.Vector3, value: BABYLON.Vector3): void {
@@ -81,13 +103,13 @@ export class VectorArrow {
 
     this.root.setEnabled(true);
 
-    // SAFE NORMALIZATION (NO MUTATION)
     const direction = value.clone().normalize();
 
-    // ROTATION
     const up = BABYLON.Vector3.Up();
     const axis = BABYLON.Vector3.Cross(up, direction);
-    const angle = Math.acos(BABYLON.Vector3.Dot(up, direction));
+    const angle = Math.acos(
+      Math.max(-1, Math.min(1, BABYLON.Vector3.Dot(up, direction)))
+    );
 
     if (axis.lengthSquared() < 0.0001) {
       this.root.rotationQuaternion =
@@ -97,24 +119,43 @@ export class VectorArrow {
     } else {
       this.root.rotationQuaternion = BABYLON.Quaternion.RotationAxis(
         axis.normalize(),
-        angle
+        angle,
       );
     }
 
-    // LENGTH DISTRIBUTION
     const shaftLength = Math.max(0, length - this.headHeight);
 
-    // scale shaft ONLY
     this.shaft.scaling.y = shaftLength;
-
-    // keep shaft base at 0
     this.shaft.position.y = shaftLength / 2;
-
-    // place head at tip
     this.head.position.y = shaftLength + this.headHeight / 2;
 
     this.root.position = origin.add(
-      new BABYLON.Vector3(0, this.defaultOriginHeight, 0)
+      new BABYLON.Vector3(0, this.defaultOriginHeight, 0),
     );
+  }
+
+  public setSelected(selected: boolean): void {
+    const shaftMat = this.shaft.material as BABYLON.StandardMaterial;
+    const headMat = this.head.material as BABYLON.StandardMaterial;
+
+    if (selected) {
+      shaftMat.emissiveColor = shaftMat.diffuseColor.scale(0.5);
+      headMat.emissiveColor = headMat.diffuseColor.scale(0.65);
+      this.shaft.scaling.x = 1.1;
+      this.shaft.scaling.z = 1.1;
+      this.head.scaling.scaleInPlace(1.2);
+    } else {
+      shaftMat.emissiveColor = BABYLON.Color3.Black();
+      headMat.emissiveColor = BABYLON.Color3.Black();
+      this.shaft.scaling.x = 1;
+      this.shaft.scaling.z = 1;
+      this.head.scaling = BABYLON.Vector3.One();
+    }
+  }
+
+  public dispose(): void {
+    this.shaft.dispose();
+    this.head.dispose();
+    this.root.dispose();
   }
 }

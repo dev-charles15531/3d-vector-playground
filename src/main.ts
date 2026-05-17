@@ -1,128 +1,173 @@
+// main.ts
 import * as BABYLON from "@babylonjs/core";
 import { GridMaterial } from "@babylonjs/materials/grid";
-
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/loaders";
 
-import { VectorRenderer } from "./VectorRenderer.ts";
-import { VectorEngine } from "./VectorEngine.ts";
-import { UI } from "./UI.ts";
-import { Lab } from "./Lab.ts";
+import { VectorRenderer } from "./VectorRenderer";
+import { VectorEngine } from "./VectorEngine";
+import { VectorOverlays } from "./VectorOverlays";
+import { DragController } from "./DragController";
+import { CameraController } from "./CameraController";
+import { StateSerializer } from "./StateSerializer";
+import { UI } from "./UI";
+import { Lab } from "./Lab";
 
 class Playground {
   public static CreateScene(
     engine: BABYLON.Engine,
     canvas: HTMLCanvasElement,
   ): BABYLON.Scene {
-    // Create scene
+    // ── Scene setup ──────────────────────────────────────────────────────
     const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(0, 0, 0);
+    scene.clearColor = new BABYLON.Color4(0, 0, 0, 1);
 
-    // Create camera
+    // ── Camera ────────────────────────────────────────────────────────────
     const camera = new BABYLON.ArcRotateCamera(
       "camera1",
       -Math.PI / 2,
-      Math.PI / 2,
-      12,
+      Math.PI / 3,
+      14,
       BABYLON.Vector3.Zero(),
       scene,
     );
     camera.upperBetaLimit = (Math.PI / 2) * 0.95;
+    camera.lowerRadiusLimit = 3;
+    camera.upperRadiusLimit = 80;
     camera.attachControl(canvas);
 
-    // Add light
-    const light = new BABYLON.HemisphericLight(
-      "light",
-      new BABYLON.Vector3(0, 1, 0),
-      scene,
-    );
-    light.intensity = 0.6;
+    // ── Lights ────────────────────────────────────────────────────────────
+    const hemi = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+    hemi.intensity = 0.6;
 
-    const labLight = new BABYLON.SpotLight(
+    const spot = new BABYLON.SpotLight(
       "splight",
       new BABYLON.Vector3(0, 10, 0),
       new BABYLON.Vector3(0, -1, 0),
-      Math.PI / 2,
-      2,
-      scene,
+      Math.PI / 2, 2, scene,
     );
-    labLight.intensity = 0.8;
+    spot.intensity = 0.8;
 
-    // Create ground
+    // ── Ground ────────────────────────────────────────────────────────────
     const ground = BABYLON.MeshBuilder.CreateGround(
       "ground",
       { width: 500, height: 500 },
       scene,
     );
-
-    // Create ground grid
     const grid = new GridMaterial("grid", scene);
     grid.gridRatio = 1;
     grid.opacity = 0.65;
     grid.mainColor = new BABYLON.Color3(0.2, 0.2, 0.25);
     grid.lineColor = new BABYLON.Color3(0.35, 0.35, 0.45);
-
     ground.material = grid;
 
+    // ── Lab ────────────────────────────────────────────────────────────────
     const labSize = 50;
-
-    // Create lab
     new Lab(scene, labSize, grid);
 
-    // Draw origin
-    const origin = BABYLON.MeshBuilder.CreateSphere(
-      "origin",
-      { diameter: 0.3 },
-      scene,
-    );
+    // ── Origin marker ──────────────────────────────────────────────────────
     const defaultOriginHeight = labSize / 2;
+    const origin = BABYLON.MeshBuilder.CreateSphere("origin", { diameter: 0.35 }, scene);
     origin.position = new BABYLON.Vector3(0, defaultOriginHeight, 0);
     const originMat = new BABYLON.StandardMaterial("originMat", scene);
     originMat.emissiveColor = new BABYLON.Color3(0.6, 0.1, 0.8);
     origin.material = originMat;
-
     camera.setTarget(origin.position);
 
+    // ── Core systems ───────────────────────────────────────────────────────
     const vecEngine = new VectorEngine(defaultOriginHeight);
     const renderer = new VectorRenderer(scene, defaultOriginHeight);
+    const overlays = new VectorOverlays(scene, defaultOriginHeight);
+    const cameraController = new CameraController(camera, scene, canvas, defaultOriginHeight);
+    const dragController = new DragController(
+      scene, camera, canvas, vecEngine, renderer, defaultOriginHeight,
+    );
 
+    // ── Engine → Renderer wiring ───────────────────────────────────────────
     vecEngine.onVectorAdded = (v) => {
       renderer.add(v);
       renderer.refresh(vecEngine.getVectors());
+      updateOverlays();
     };
-
     vecEngine.onVectorUpdated = (v) => {
       renderer.update(v);
       renderer.refresh(vecEngine.getVectors());
+      updateOverlays();
     };
-
     vecEngine.onVectorRemoved = (v) => {
       renderer.remove(v);
       renderer.refresh(vecEngine.getVectors());
+      updateOverlays();
     };
-
     vecEngine.onModeChanged = () => {
       renderer.setHeadToTail(vecEngine.getHeadToTail());
       renderer.refresh(vecEngine.getVectors());
     };
-
-    vecEngine.addVector({
-      label: "Vector-1",
-      key: "Vector-1",
-
-      origin: new BABYLON.Vector3(0, 0, 0),
-      value: new BABYLON.Vector3(1, 1, 1),
-
-      type: "base",
-
-      display: {
-        color: BABYLON.Color3.FromHexString("#FF6B6B"),
-      },
-
-      vector: null,
+    vecEngine.onSelectionChanged((key) => {
+      renderer.highlight(key, vecEngine.getVectors());
+      updateOverlays();
     });
 
-    new UI(scene, vecEngine);
+    const updateOverlays = () => {
+      overlays.updateForSelection(
+        vecEngine.getSelectedKey(),
+        vecEngine.getVectors(),
+      );
+    };
+
+    // ── High-contrast mode ────────────────────────────────────────────────
+    // When enabled, boost emissive on all arrows for better recording visibility
+    cameraController.onHighContrastChanged = (enabled: boolean) => {
+      vecEngine.getVectors().forEach((v) => {
+        if (!v.vector) return;
+        const meshes = v.vector.getMeshes();
+        meshes.forEach((m) => {
+          const mat = m.material as BABYLON.StandardMaterial;
+          if (!mat) return;
+          if (enabled) {
+            mat.emissiveColor = mat.diffuseColor.scale(0.7);
+            m.edgesWidth = 4;
+          } else {
+            mat.emissiveColor = BABYLON.Color3.Black();
+          }
+        });
+      });
+
+      // Also make the scene background slightly lighter for contrast
+      scene.clearColor = enabled
+        ? new BABYLON.Color4(0.03, 0.05, 0.1, 1)
+        : new BABYLON.Color4(0, 0, 0, 1);
+    };
+
+    // ── Load state from URL hash if present ───────────────────────────────
+    const savedState = StateSerializer.decode();
+    if (savedState && savedState.length > 0) {
+      savedState.forEach((sv) => {
+        vecEngine.addVector({
+          key: sv.key,
+          label: sv.label,
+          type: sv.type,
+          origin: new BABYLON.Vector3(sv.ox, sv.oy, sv.oz),
+          value: new BABYLON.Vector3(sv.x, sv.y, sv.z),
+          display: { color: BABYLON.Color3.FromHexString(sv.color) },
+          vector: null,
+        });
+      });
+    } else {
+      // Default vectors
+      vecEngine.addVector({
+        label: "Vector-1",
+        key: "Vector-1",
+        origin: BABYLON.Vector3.Zero(),
+        value: new BABYLON.Vector3(3, 4, 2),
+        type: "base",
+        display: { color: BABYLON.Color3.FromHexString("#FF6B6B") },
+        vector: null,
+      });
+    }
+
+    // ── UI ────────────────────────────────────────────────────────────────
+    new UI(scene, vecEngine, dragController, cameraController);
 
     return scene;
   }

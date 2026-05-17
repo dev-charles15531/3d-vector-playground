@@ -1,3 +1,4 @@
+// VectorRenderer.ts
 import * as BABYLON from "@babylonjs/core";
 import { type Arrow } from "./types";
 import { VectorArrow } from "./VectorArrow";
@@ -8,6 +9,9 @@ export class VectorRenderer {
   private defaultArrowHeight = 1;
   private headToTail = false;
 
+  /** mesh → arrow key for picking */
+  private meshToKey = new Map<BABYLON.Mesh, string>();
+
   constructor(scene: BABYLON.Scene, defaultOriginHeight: number) {
     this.scene = scene;
     this.defaultOriginHeight = defaultOriginHeight;
@@ -15,7 +19,6 @@ export class VectorRenderer {
 
   add(v: Arrow) {
     const color = v.display?.color || BABYLON.Color3.FromHexString("#ffffff");
-
     const mesh = new VectorArrow(
       this.scene,
       {
@@ -28,8 +31,12 @@ export class VectorRenderer {
       v,
       this.defaultOriginHeight,
     );
-
     v.vector = mesh;
+
+    // Register meshes for picking
+    for (const m of mesh.getMeshes()) {
+      this.meshToKey.set(m, v.key);
+    }
   }
 
   setHeadToTail(enabled: boolean) {
@@ -38,20 +45,23 @@ export class VectorRenderer {
 
   refresh(vectors: Arrow[]) {
     if (this.headToTail) {
-      let currentOrigin = new BABYLON.Vector3(0, 0, 0);
-      vectors.forEach((v) => {
-        if (v.vector) {
-          v.vector.update(currentOrigin, v.value);
-          currentOrigin = currentOrigin.add(v.value);
-        }
-      });
+      const chainStart = new BABYLON.Vector3(0, 0, 0);
+      let currentOrigin = chainStart.clone();
+      for (const v of vectors) {
+        if (!v.vector) continue;
+        if (v.type === "derived") continue;
+        v.vector.update(currentOrigin, v.value);
+        currentOrigin = currentOrigin.add(v.value);
+      }
+      for (const v of vectors) {
+        if (!v.vector) continue;
+        if (v.type !== "derived") continue;
+        v.vector.update(chainStart, v.value);
+      }
       return;
     }
-
     vectors.forEach((v) => {
-      if (v.vector) {
-        v.vector.update(v.origin, v.value);
-      }
+      v.vector?.update(v.origin, v.value);
     });
   }
 
@@ -60,7 +70,23 @@ export class VectorRenderer {
   }
 
   remove(v: Arrow) {
-    v.vector?.root.dispose();
+    if (v.vector) {
+      for (const m of v.vector.getMeshes()) {
+        this.meshToKey.delete(m);
+      }
+    }
+    v.vector?.dispose();
     v.vector = null;
+  }
+
+  highlight(selectedKey: string | null, vectors: Arrow[]) {
+    vectors.forEach((v) => {
+      v.vector?.setSelected(v.key === selectedKey);
+    });
+  }
+
+  /** Look up which arrow key a picked mesh belongs to */
+  public getKeyForMesh(mesh: BABYLON.Mesh): string | undefined {
+    return this.meshToKey.get(mesh);
   }
 }
