@@ -126,6 +126,7 @@ class Playground {
     vecEngine.onModeChanged = () => {
       renderer.setHeadToTail(vecEngine.getHeadToTail());
       renderer.refresh(vecEngine.getVectors());
+      updateOverlays(); // re-draw overlays at new rendered positions
     };
     vecEngine.onSelectionChanged((key) => {
       renderer.highlight(key, vecEngine.getVectors());
@@ -229,7 +230,7 @@ class Playground {
     let lastInteraction = performance.now();
     let idleActive = false;
     const IDLE_DELAY_MS = 8000;
-    const IDLE_SPEED = 0.003; // radians per frame at 60fps ≈ ~10°/s feels calm
+    const IDLE_SPEED = 0.001; // radians per frame at 60fps ≈ ~10°/s feels calm
 
     const resetIdleTimer = () => {
       lastInteraction = performance.now();
@@ -246,20 +247,25 @@ class Playground {
     window.addEventListener("wheel", resetIdleTimer, { passive: true });
 
     scene.onBeforeRenderObservable.add(() => {
-      // Don't idle when the scene is frozen or user is dragging
-      if (cameraController.isFrozen()) return;
+      // Don't idle when frozen or when the toggle is off
+      if (cameraController.isFrozen() || !cameraController.isIdleEnabled()) {
+        // If idle was active but got disabled, re-attach control and reset flag
+        if (idleActive) {
+          idleActive = false;
+          camera.attachControl(canvas);
+        }
+        return;
+      }
 
       const now = performance.now();
       const idle = now - lastInteraction > IDLE_DELAY_MS;
 
       if (idle && !idleActive) {
-        // Begin idle: detach camera control so we can drive it manually
         idleActive = true;
         camera.detachControl();
       }
 
       if (idleActive) {
-        // Gently drift alpha (azimuth). Beta and radius stay untouched.
         camera.alpha += IDLE_SPEED;
       }
     });

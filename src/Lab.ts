@@ -63,22 +63,42 @@ export class Lab {
 
     const offset = this.labSize / 2 + 0.5;
 
+    // Positive axis ends
     this.createLabel(
-      "X",
+      "+X",
       new BABYLON.Vector3(offset, this.labSize / 2, 0),
-      new BABYLON.Color3(1, 0, 0),
+      new BABYLON.Color3(1, 0.3, 0.3),
       this.scene,
     );
     this.createLabel(
-      "Y",
-      new BABYLON.Vector3(0, this.labSize, 0),
-      new BABYLON.Color3(0, 1, 0),
+      "+Y",
+      new BABYLON.Vector3(0, this.labSize + 0.5, 0),
+      new BABYLON.Color3(0.3, 1, 0.3),
       this.scene,
     );
     this.createLabel(
-      "Z",
+      "+Z",
       new BABYLON.Vector3(0, this.labSize / 2, offset),
-      new BABYLON.Color3(0, 0, 1),
+      new BABYLON.Color3(0.3, 0.5, 1),
+      this.scene,
+    );
+    // Negative axis ends
+    this.createLabel(
+      "-X",
+      new BABYLON.Vector3(-offset, this.labSize / 2, 0),
+      new BABYLON.Color3(1, 0.3, 0.3),
+      this.scene,
+    );
+    this.createLabel(
+      "-Y",
+      new BABYLON.Vector3(0, -0.5, 0),
+      new BABYLON.Color3(0.3, 1, 0.3),
+      this.scene,
+    );
+    this.createLabel(
+      "-Z",
+      new BABYLON.Vector3(0, this.labSize / 2, -offset),
+      new BABYLON.Color3(0.3, 0.5, 1),
       this.scene,
     );
 
@@ -157,17 +177,21 @@ export class Lab {
     color: BABYLON.Color3,
     scene: BABYLON.Scene,
   ) => {
+    // Plane width scales with text length so "+X" fits as well as single chars
+    const planeSize = 0.5 + text.length * 0.28;
     const plane = BABYLON.MeshBuilder.CreatePlane(
       "label-" + text,
-      { size: 0.8 },
+      { width: planeSize, height: 0.7 },
       scene,
     );
     plane.position = position;
     plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
 
+    const texW = 192;
+    const texH = 96;
     const dynamicTexture = new BABYLON.DynamicTexture(
       "drawText-" + text,
-      { width: 128, height: 128 },
+      { width: texW, height: texH },
       scene,
     );
     const material = new BABYLON.StandardMaterial("labelMat-" + text, scene);
@@ -183,7 +207,7 @@ export class Lab {
       text,
       null,
       null,
-      "bold 80px Arial",
+      "bold 64px Arial",
       "white",
       "transparent",
       true,

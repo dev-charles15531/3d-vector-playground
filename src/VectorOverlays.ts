@@ -1,26 +1,29 @@
 // VectorOverlays.ts
 // Pedagogical visual overlays:
 //   - Component breakdown: solid RGB legs from origin showing X, Y, Z contributions
-//   - Rectangular component box: faint edges connecting the legs (no clutter)
+//   - Rectangular component box: faint edges connecting the legs
 //   - Angle arc + degree label between two vectors when exactly 2 exist
-//   - Dot product readout next to the arc
 //
-// Overlay origins always follow the *rendered* position (head-to-tail aware)
-// by asking VectorRenderer for the last-used origin via getRenderedOrigin().
+// Line animation: primary legs pulse alpha with offset sine waves to create a
+// "flowing from origin" feel. Box edges breathe on a slower cycle.
+// Overlay origins always follow the *rendered* position (head-to-tail aware).
 
 import * as BABYLON from "@babylonjs/core";
-import { type Arrow } from "./types";
+import { type AnimatedSegment, type Arrow } from "./types";
 import { VectorRenderer } from "./VectorRenderer";
 
 export class VectorOverlays {
   private scene: BABYLON.Scene;
   private defaultOriginHeight: number;
   private renderer: VectorRenderer;
-
-  private componentMeshes: Array<BABYLON.LinesMesh | BABYLON.Mesh> = [];
-  private angleArc: BABYLON.LinesMesh | null = null;
+  private animatedLines: AnimatedSegment[] = [];
+  private staticMeshes: BABYLON.Mesh[] = []; // labels (no pulse)
+  // private angleArc: BABYLON.LinesMesh | null = null;
   private angleLabel: BABYLON.Mesh | null = null;
-  private dotLabel: BABYLON.Mesh | null = null;
+
+  /** Scene observable handle so we can remove it on dispose */
+  private renderObserver: BABYLON.Nullable<BABYLON.Observer<BABYLON.Scene>> =
+    null;
 
   constructor(
     scene: BABYLON.Scene,
@@ -30,14 +33,31 @@ export class VectorOverlays {
     this.scene = scene;
     this.defaultOriginHeight = defaultOriginHeight;
     this.renderer = renderer;
+
+    // Single render loop for all overlay animation — added once, runs every frame
+    this.renderObserver = this.scene.onBeforeRenderObservable.add(() => {
+      if (this.animatedLines.length === 0) return;
+
+      const t = performance.now() / 1000;
+
+      for (const seg of this.animatedLines) {
+        const wave = Math.sin(
+          t * seg.speed * 4 -
+            (seg.segmentIndex / seg.segmentCount) * Math.PI * 2,
+        );
+
+        const intensity = 0.15 + Math.max(0, wave) * 1.8;
+
+        seg.mesh.color = seg.baseColor.scale(intensity);
+      }
+    });
   }
 
   public updateForSelection(
     selectedKey: string | null,
     vectors: Arrow[],
   ): void {
-    this.clearComponentMeshes();
-    this.clearAngleArc();
+    this.clearAll();
 
     if (!selectedKey) return;
 
@@ -52,12 +72,10 @@ export class VectorOverlays {
       new BABYLON.Vector3(0, this.defaultOriginHeight, 0),
     );
 
-    // Component breakdown — respects per-vector toggle (default ON)
     if (selected.showComponents !== false) {
       this.drawComponentBreakdown(origin, selected.value);
     }
 
-    // Angle arc — only if BOTH vectors have showAngle !== false
     const other = vectors.find((v) => v.key !== selectedKey);
     if (
       vectors.length === 2 &&
@@ -84,8 +102,6 @@ export class VectorOverlays {
   }
 
   // ─── Component breakdown ─────────────────────────────────────────────────
-  // Shows three solid colored legs from the origin: X (red), Y (green), Z (blue)
-  // plus a faint rectangular "box" of connecting edges so the parallelogram is clear.
 
   private drawComponentBreakdown(
     origin: BABYLON.Vector3,
@@ -93,60 +109,110 @@ export class VectorOverlays {
   ) {
     const { x, y, z } = vec;
 
-    // The three axis endpoints (one component each)
     const xTip = origin.add(new BABYLON.Vector3(x, 0, 0));
     const yTip = origin.add(new BABYLON.Vector3(0, y, 0));
     const zTip = origin.add(new BABYLON.Vector3(0, 0, z));
-
-    // The full tip (all three components)
     const tip = origin.add(vec);
-
-    // Intermediate corners for the "box" edges
-    const xzCorner = origin.add(new BABYLON.Vector3(x, 0, z)); // floor corner
-    const xTipUp = xTip.add(new BABYLON.Vector3(0, y, 0)); // = tip
-    const zTipUp = zTip.add(new BABYLON.Vector3(0, y, 0)); // = tip from z side
+    const xzCorner = origin.add(new BABYLON.Vector3(x, 0, z));
 
     const RED = new BABYLON.Color3(0.95, 0.25, 0.25);
     const GREEN = new BABYLON.Color3(0.25, 0.9, 0.35);
     const BLUE = new BABYLON.Color3(0.25, 0.45, 1.0);
     const FAINT = new BABYLON.Color3(0.35, 0.35, 0.45);
 
-    // ── Three primary legs (solid, bright) ──────────────────────────────
-    this.makeLine([origin, xTip], RED, 0.9, "leg-x");
-    this.makeLine([origin, yTip], GREEN, 0.9, "leg-y");
-    this.makeLine([origin, zTip], BLUE, 0.9, "leg-z");
+    // ── Primary legs — animated: pulse 0.5 ↔ 1.0, staggered by axis ────────
+    // X lights first, then Y (2π/3 later), then Z (4π/3 later) → sequential glow
+    this.makeAnimatedLine([origin, xTip], RED, 0.7, 0.3, 0, 1.2, "leg-x");
+    this.makeAnimatedLine(
+      [origin, yTip],
+      GREEN,
+      0.7,
+      0.3,
+      Math.PI * 0.67,
+      1.2,
+      "leg-y",
+    );
+    this.makeAnimatedLine(
+      [origin, zTip],
+      BLUE,
+      0.7,
+      0.3,
+      Math.PI * 1.33,
+      1.2,
+      "leg-z",
+    );
 
-    // ── Completing edges of the rectangular box (faint) ──────────────────
-    // Floor rectangle: origin → xTip → xzCorner → zTip → origin
-    this.makeLine([xTip, xzCorner], RED, 0.22, "box-xz1");
-    this.makeLine([zTip, xzCorner], BLUE, 0.22, "box-xz2");
+    // ── Box edges — slower breath, unified phase ──────────────────────────
+    this.makeAnimatedLine([xTip, xzCorner], RED, 0.18, 0.1, 0, 0.6, "box-xz1");
+    this.makeAnimatedLine([zTip, xzCorner], BLUE, 0.18, 0.1, 0, 0.6, "box-xz2");
 
-    // Vertical edges from floor corners up to tip level
     this.makeLine([xzCorner, tip], FAINT, 0.2, "box-v1");
     this.makeLine([xTip, tip], FAINT, 0.2, "box-v2");
     this.makeLine([zTip, tip], FAINT, 0.2, "box-v3");
-    this.makeLine([yTip, tip], GREEN, 0.22, "box-v4");
 
-    // ── Floating component labels near leg midpoints ──────────────────────
-    const xMid = origin
-      .add(xTip)
-      .scale(0.5)
-      .add(new BABYLON.Vector3(0, 0.25, 0));
-    const yMid = origin
-      .add(yTip)
-      .scale(0.5)
-      .add(new BABYLON.Vector3(0.25, 0, 0));
-    const zMid = origin
-      .add(zTip)
-      .scale(0.5)
-      .add(new BABYLON.Vector3(0, 0.25, 0));
+    this.makeAnimatedLine([yTip, tip], GREEN, 0.18, 0.1, 0, 0.6, "box-v4");
 
-    if (Math.abs(x) > 0.3)
-      this.makeComponentLabel(`x=${x.toFixed(1)}`, xMid, RED);
-    if (Math.abs(y) > 0.3)
-      this.makeComponentLabel(`y=${y.toFixed(1)}`, yMid, GREEN);
-    if (Math.abs(z) > 0.3)
-      this.makeComponentLabel(`z=${z.toFixed(1)}`, zMid, BLUE);
+    // ── Labels at leg tips (static, no pulse — values must be readable) ───
+    if (Math.abs(x) > 0.3) {
+      const pos = xTip.add(new BABYLON.Vector3(0, 0.35, 0.2));
+      this.makeLabel(`x=${x.toFixed(2)}`, pos, RED);
+    }
+    if (Math.abs(y) > 0.3) {
+      const pos = yTip.add(new BABYLON.Vector3(0.35, 0.15, 0));
+      this.makeLabel(`y=${y.toFixed(2)}`, pos, GREEN);
+    }
+    if (Math.abs(z) > 0.3) {
+      const pos = zTip.add(new BABYLON.Vector3(0.2, 0.35, 0));
+      this.makeLabel(`z=${z.toFixed(2)}`, pos, BLUE);
+    }
+  }
+
+  /**
+   * Create an animated line and register it for per-frame pulse.
+   * @param _baseAlpha  Resting alpha (mid-point of pulse)
+   * @param _pulseAmp   Half-amplitude of the sine swing
+   * @param _phaseOffset  Starting phase in radians
+   * @param speed      Radians per second
+   */ private makeAnimatedLine(
+    pts: BABYLON.Vector3[],
+    color: BABYLON.Color3,
+    _baseAlpha: number,
+    _pulseAmp: number,
+    _phaseOffset: number,
+    speed: number,
+    name: string,
+  ): void {
+    if (pts.length < 2) return;
+
+    const start = pts[0];
+    const end = pts[pts.length - 1];
+
+    const dir = end.subtract(start);
+    const segments = 24;
+
+    for (let i = 0; i < segments; i++) {
+      const t0 = i / segments;
+      const t1 = (i + 1) / segments;
+
+      const p0 = start.add(dir.scale(t0));
+      const p1 = start.add(dir.scale(t1));
+
+      const seg = BABYLON.MeshBuilder.CreateLines(
+        `${name}-${i}`,
+        { points: [p0, p1] },
+        this.scene,
+      );
+
+      seg.color = color.scale(0.25);
+
+      this.animatedLines.push({
+        mesh: seg,
+        baseColor: color.clone(),
+        segmentIndex: i,
+        segmentCount: segments,
+        speed,
+      });
+    }
   }
 
   /** Safe line creation — skips if the two endpoints are identical (avoids BJS warning) */
@@ -167,32 +233,34 @@ export class VectorOverlays {
     );
     line.color = color;
     line.alpha = alpha;
-    this.componentMeshes.push(line);
+    this.staticMeshes.push(line);
   }
 
-  private makeComponentLabel(
+  private makeLabel(
     text: string,
     pos: BABYLON.Vector3,
     color: BABYLON.Color3,
   ): void {
     const label = this.createFloatingLabel(text, pos, color, 11);
-    this.componentMeshes.push(label);
+    this.staticMeshes.push(label);
   }
 
-  private clearComponentMeshes() {
-    for (const m of this.componentMeshes) m.dispose();
-    this.componentMeshes = [];
+  private clearAll() {
+    // Dispose angle label first (not in animatedLines)
+    this.angleLabel?.dispose();
+    this.angleLabel = null;
+
+    for (const al of this.animatedLines) al.mesh.dispose();
+    this.animatedLines = [];
+    for (const m of this.staticMeshes) m.dispose();
+    this.staticMeshes = [];
   }
 
   // ─── Angle arc ───────────────────────────────────────────────────────────
-  // originA / originB are the rendered world-space origins of the two arrows.
-  // In normal mode they're the same point; in head-to-tail they differ.
-  // The arc is drawn at originA using both direction vectors.
-
   private drawAngleArc(
-    originA: BABYLON.Vector3,
+    origin: BABYLON.Vector3,
     vecA: BABYLON.Vector3,
-    originB: BABYLON.Vector3,
+    _originB: BABYLON.Vector3,
     vecB: BABYLON.Vector3,
     colorA?: BABYLON.Color3,
     colorB?: BABYLON.Color3,
@@ -201,74 +269,70 @@ export class VectorOverlays {
     const lenB = vecB.length();
     if (lenA < 0.001 || lenB < 0.001) return;
 
-    const dirA = vecA.clone().normalize();
-    const dirB = vecB.clone().normalize();
-    const dot = Math.max(-1, Math.min(1, BABYLON.Vector3.Dot(dirA, dirB)));
+    const dirA = vecA.normalizeToNew();
+    const dirB = vecB.normalizeToNew();
+
+    const dot = BABYLON.Scalar.Clamp(BABYLON.Vector3.Dot(dirA, dirB), -1, 1);
+
     const angleRad = Math.acos(dot);
-    const angleDeg = angleRad * (180 / Math.PI);
+    if (angleRad < 0.01) return;
 
-    const axisRaw = BABYLON.Vector3.Cross(dirA, dirB);
-    if (axisRaw.lengthSquared() < 0.0001) return; // parallel vectors — no arc
+    const angleDeg = BABYLON.Tools.ToDegrees(angleRad);
 
-    const arcRadius = Math.min(lenA, lenB) * 0.32;
+    const axis = BABYLON.Vector3.Cross(dirA, dirB);
+    if (axis.lengthSquared() < 1e-6) return;
+
+    axis.normalize();
+
+    const arcRadius = Math.min(lenA, lenB) * 0.28;
     const segments = 40;
-    const sinTotal = Math.sin(angleRad);
-    const pts: BABYLON.Vector3[] = [];
 
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      let interp: BABYLON.Vector3;
-      if (sinTotal < 0.0001) {
-        interp = dirA.clone();
-      } else {
-        const sinA = Math.sin((1 - t) * angleRad) / sinTotal;
-        const sinB = Math.sin(t * angleRad) / sinTotal;
-        interp = dirA.scale(sinA).add(dirB.scale(sinB));
-      }
-      pts.push(originA.add(interp.scale(arcRadius)));
-    }
-
-    if (pts.length < 2) return;
-
-    this.angleArc = BABYLON.MeshBuilder.CreateLines(
-      "angleArc",
-      { points: pts },
-      this.scene,
-    );
     const blendColor =
       colorA && colorB
         ? colorA.add(colorB).scale(0.5)
         : new BABYLON.Color3(1, 1, 0.3);
-    this.angleArc.color = blendColor;
-    this.angleArc.alpha = 0.9;
 
-    const midPt = pts[Math.floor(segments / 2)];
-    const midDir = midPt.subtract(originA).normalize();
-    const labelPos = originA.add(midDir.scale(arcRadius * 1.6));
+    const rotationStep = BABYLON.Quaternion.RotationAxis(
+      axis,
+      angleRad / segments,
+    );
+
+    let currentDir = dirA.clone();
+    const points: BABYLON.Vector3[] = [];
+
+    for (let i = 0; i <= segments; i++) {
+      points.push(origin.add(currentDir.scale(arcRadius)));
+
+      currentDir = BABYLON.Vector3.TransformCoordinates(
+        currentDir,
+        BABYLON.Matrix.Compose(
+          BABYLON.Vector3.One(),
+          rotationStep,
+          BABYLON.Vector3.Zero(),
+        ),
+      ).normalize();
+    }
+
+    const arc = BABYLON.MeshBuilder.CreateLines(
+      "angleArc",
+      { points },
+      this.scene,
+    );
+
+    arc.color = blendColor;
+    arc.alpha = 0.95;
+
+    this.staticMeshes.push(arc);
+
+    const mid = points[Math.floor(points.length / 2)];
+    const labelPos = mid.add(mid.subtract(origin).normalize().scale(0.4));
+
     this.angleLabel = this.createFloatingLabel(
       `${angleDeg.toFixed(1)}°`,
       labelPos,
       blendColor,
       15,
     );
-
-    const dotVal = BABYLON.Vector3.Dot(vecA, vecB);
-    const dotPos = originA.add(midDir.scale(arcRadius * 2.5));
-    this.dotLabel = this.createFloatingLabel(
-      `A·B = ${dotVal.toFixed(2)}`,
-      dotPos,
-      new BABYLON.Color3(1, 0.85, 0.3),
-      11,
-    );
-  }
-
-  private clearAngleArc() {
-    this.angleArc?.dispose();
-    this.angleArc = null;
-    this.angleLabel?.dispose();
-    this.angleLabel = null;
-    this.dotLabel?.dispose();
-    this.dotLabel = null;
   }
 
   // ─── Floating billboard label ────────────────────────────────────────────
@@ -321,7 +385,10 @@ export class VectorOverlays {
   }
 
   public dispose() {
-    this.clearComponentMeshes();
-    this.clearAngleArc();
+    this.clearAll();
+    if (this.renderObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.renderObserver);
+      this.renderObserver = null;
+    }
   }
 }

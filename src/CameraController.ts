@@ -18,9 +18,11 @@ export class CameraController {
 
   private frozen = false;
   private highContrast = false;
+  private idleEnabled = true; // idle orbit on by default
 
   public onFreezeChanged?: (frozen: boolean) => void;
   public onHighContrastChanged?: (enabled: boolean) => void;
+  public onIdleChanged?: (enabled: boolean) => void;
 
   constructor(
     camera: BABYLON.ArcRotateCamera,
@@ -83,16 +85,20 @@ export class CameraController {
     const length = value.length();
     if (length < 0.001) return;
 
-    // Target = midpoint of the arrow in world space
+    // Target = midpoint of the arrow
     const target = renderedOrigin.add(value.scale(0.5));
 
-    // Radius: just enough to see the full arrow with breathing room
-    const targetRadius = Math.max(length * 1.8, 4);
+    // Radius: comfortable viewing distance
+    const targetRadius = Math.max(length * 2.2, 5);
 
-    // Angle: keep current beta (elevation), orient alpha to face the arrow's XZ direction
+    // Alpha: orbit 90° to the side of the arrow's XZ heading so the
+    // arrow is seen from its flank — labels on all axes stay readable.
     const xzAngle = Math.atan2(value.z, value.x);
-    const targetAlpha = -xzAngle + Math.PI * 0.55; // offset so we're slightly to the side
-    const targetBeta = Math.PI / 4; // comfortable 45° elevation
+    const targetAlpha = -xzAngle + Math.PI * 0.5; // pure 90° offset = true side view
+
+    // Beta: low elevation (~25°) so we see the full arrow from the side,
+    // not from above. Clamp away from zero to avoid gimbal lock.
+    const targetBeta = Math.PI / 2 - 0.42; // ≈ 66° from vertical = 24° from horizontal
 
     this.animateCamera(
       targetAlpha,
@@ -174,5 +180,16 @@ export class CameraController {
 
   public isHighContrast(): boolean {
     return this.highContrast;
+  }
+
+  /** Toggle idle orbit animation on/off */
+  public toggleIdle(): boolean {
+    this.idleEnabled = !this.idleEnabled;
+    this.onIdleChanged?.(this.idleEnabled);
+    return this.idleEnabled;
+  }
+
+  public isIdleEnabled(): boolean {
+    return this.idleEnabled;
   }
 }

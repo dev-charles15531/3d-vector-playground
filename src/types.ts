@@ -22,3 +22,12 @@ export type Arrow = {
   };
   vector: VectorArrow | null;
 };
+
+/** Metadata stored per animated mesh so the render loop can update it */
+export type AnimatedSegment = {
+  mesh: BABYLON.LinesMesh;
+  baseColor: BABYLON.Color3;
+  segmentIndex: number;
+  segmentCount: number;
+  speed: number;
+};

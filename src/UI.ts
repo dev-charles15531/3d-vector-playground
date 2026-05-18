@@ -11,7 +11,6 @@ import {
   Button,
   ScrollViewer,
   Checkbox,
-  Grid,
 } from "@babylonjs/gui";
 
 import { VectorEngine } from "./VectorEngine";
@@ -32,7 +31,7 @@ export class UI {
   private snapBtn!: Button;
   private freezeBtn!: Button;
   private hcBtn!: Button;
-  private axisLockBtns: Map<string, Button> = new Map();
+  private idleBtn!: Button;
 
   constructor(
     scene: BABYLON.Scene,
@@ -68,13 +67,18 @@ export class UI {
       this.hcBtn.background = enabled ? "#92400E" : "#1E293B";
       this.hcBtn.color = enabled ? "#FCD34D" : "#94A3B8";
     };
+
+    this.cameraController.onIdleChanged = (enabled) => {
+      this.idleBtn.background = enabled ? "#1E3A5F" : "#1E293B";
+      this.idleBtn.color = enabled ? "#7DD3FC" : "#475569";
+    };
   }
 
   private buildUI() {
     // ── Bottom strip (vector list) ──────────────────────────────────────────
     const root = new Rectangle();
     root.width = "100%";
-    root.height = "155px";
+    root.height = "160px";
     root.thickness = 0;
     root.background = "#0A0F1EDD";
     root.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
@@ -186,8 +190,17 @@ export class UI {
     this.hcBtn = this.makeToolBtn("High Contrast", () => {
       this.cameraController.toggleHighContrast();
     });
-    this.hcBtn.paddingRight = "6px";
+    this.hcBtn.paddingRight = "4px";
     row.addControl(this.hcBtn);
+
+    // Idle orbit toggle — ON by default, matching CameraController's initial state
+    this.idleBtn = this.makeToolBtn("Orbit", () => {
+      this.cameraController.toggleIdle();
+    });
+    this.idleBtn.background = "#1E3A5F"; // on = tinted blue
+    this.idleBtn.color = "#7DD3FC";
+    this.idleBtn.paddingRight = "6px";
+    row.addControl(this.idleBtn);
 
     row.addControl(this.makeDivider());
 
@@ -563,7 +576,7 @@ export class UI {
   private addOperationsPanel() {
     const opBox = new Rectangle();
     opBox.width = "400px";
-    opBox.height = "120px";
+    opBox.height = "138px";
     opBox.thickness = 1;
     opBox.color = "#1E3A5F";
     opBox.cornerRadius = 8;
@@ -592,7 +605,7 @@ export class UI {
     // ── Main row: [A] [ops] [B]  |  result ───────────────────────────────
     const mainRow = new StackPanel();
     mainRow.isVertical = false;
-    mainRow.height = "88px";
+    mainRow.height = "106px";
     outer.addControl(mainRow);
 
     // Left side: inputs + op buttons
@@ -629,7 +642,7 @@ export class UI {
     inputRow.addControl(leftSelect);
     inputRow.addControl(rightSelect);
 
-    // Op buttons row
+    // Op buttons row + dot product display on the same visual tier
     const opsRow = new StackPanel();
     opsRow.isVertical = false;
     opsRow.height = "32px";
@@ -654,7 +667,7 @@ export class UI {
       },
     ];
 
-    opDefs.forEach(({ label, op, color, tip }) => {
+    opDefs.forEach(({ label, op, color }) => {
       const b = Button.CreateSimpleButton("op-" + op, label);
       b.width = label.length * 6.5 + 18 + "px";
       b.height = "26px";
@@ -666,6 +679,41 @@ export class UI {
       b.onPointerUpObservable.add(() => perform(op));
       opsRow.addControl(b);
     });
+
+    // Dot product — same row height and border style as op buttons so it
+    // reads as a peer metric, not a buried footnote.
+    const dotDisplay = new Rectangle();
+    dotDisplay.height = "26px";
+    dotDisplay.width = "82px";
+    dotDisplay.cornerRadius = 5;
+    dotDisplay.background = "#1E293B";
+    dotDisplay.thickness = 1;
+    dotDisplay.color = "#FACC15";
+    dotDisplay.paddingLeft = "4px";
+    leftCol.addControl(dotDisplay);
+
+    const dotInner = new StackPanel();
+    dotInner.isVertical = false;
+    dotInner.height = "100%";
+    dotDisplay.addControl(dotInner);
+
+    const dotLabelTxt = new TextBlock();
+    dotLabelTxt.text = "A·B = ";
+    dotLabelTxt.width = "36px";
+    dotLabelTxt.color = "#FACC15";
+    dotLabelTxt.fontSize = 10;
+    dotLabelTxt.fontStyle = "bold";
+    dotLabelTxt.fontFamily = "monospace";
+    dotInner.addControl(dotLabelTxt);
+
+    const dotVal = new TextBlock();
+    dotVal.text = "—";
+    dotVal.width = "42px";
+    dotVal.color = "#E2E8F0";
+    dotVal.fontSize = 10;
+    dotVal.fontFamily = "monospace";
+    dotVal.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    dotInner.addControl(dotVal);
 
     // Divider
     const vDiv = new Rectangle();
@@ -704,12 +752,28 @@ export class UI {
 
     const resMag = new TextBlock();
     resMag.text = "";
-    resMag.height = "13px";
+    resMag.height = "14px";
     resMag.color = "#64748B";
     resMag.fontSize = 9;
     resMag.fontFamily = "monospace";
     resMag.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     resultCol.addControl(resMag);
+
+    /** Recompute dot product whenever inputs change */
+    const refreshDot = () => {
+      const a = this.engine.getVector(leftSelect.text.trim());
+      const b = this.engine.getVector(rightSelect.text.trim());
+      if (a?.value && b?.value) {
+        dotVal.text = BABYLON.Vector3.Dot(a.value, b.value).toFixed(3);
+        dotVal.color = "#E2E8F0";
+      } else {
+        dotVal.text = "—";
+        dotVal.color = "#475569";
+      }
+    };
+
+    leftSelect.onTextChangedObservable.add(refreshDot);
+    rightSelect.onTextChangedObservable.add(refreshDot);
 
     const addToSceneBtn = Button.CreateSimpleButton(
       "addResult",
@@ -733,6 +797,7 @@ export class UI {
     const displayResult = (vec: BABYLON.Vector3 | null, opLabel: string) => {
       pendingResult = vec;
       pendingLabel = opLabel;
+      refreshDot();
       if (!vec) {
         resCoords.text = "Invalid —\ncheck keys";
         resMag.text = "";
