@@ -129,4 +129,120 @@ export class VectorEngine {
       }
     }
   }
+
+  // ── Duplicate / Opposite helpers ─────────────────────────────────────────
+
+  /**
+   * Find an empty origin position for a new vector.
+   *
+   * @param constrainToSameAxis  When true, only search along the same vertical
+   *   axis (X/Z fixed to source origin).  When false, search anywhere in the XZ plane.
+   * @param sourceOrigin  The XZ position to align to when constraining.
+   * @param minClearance  Minimum distance from any existing origin.
+   */
+  private findEmptyOrigin(
+    constrainToSameAxis: boolean,
+    sourceOrigin: BABYLON.Vector3,
+    minClearance = 2.5,
+  ): BABYLON.Vector3 {
+    const existing = this.getVectors().map((v) => v.origin);
+
+    const isClear = (candidate: BABYLON.Vector3): boolean => {
+      for (const o of existing) {
+        const dx = candidate.x - o.x;
+        const dz = candidate.z - o.z;
+        if (Math.sqrt(dx * dx + dz * dz) < minClearance) return false;
+      }
+      return true;
+    };
+
+    if (constrainToSameAxis) {
+      // Search along the same vertical axis: try offsets in Z then X
+      const offsets = [3, -3, 6, -6, 9, -9, 12, -12, 15, -15];
+      for (const dz of offsets) {
+        const c = new BABYLON.Vector3(sourceOrigin.x, sourceOrigin.y, sourceOrigin.z + dz);
+        if (isClear(c)) return c;
+      }
+      for (const dx of offsets) {
+        const c = new BABYLON.Vector3(sourceOrigin.x + dx, sourceOrigin.y, sourceOrigin.z);
+        if (isClear(c)) return c;
+      }
+      // Fallback: just push far enough
+      return new BABYLON.Vector3(sourceOrigin.x, sourceOrigin.y, sourceOrigin.z + 20);
+    }
+
+    // Search anywhere in the XZ plane using a spiral-ish grid
+    const step = minClearance;
+    for (let radius = step; radius <= 40; radius += step) {
+      const candidates: BABYLON.Vector3[] = [];
+      const steps = Math.ceil((2 * Math.PI * radius) / step);
+      for (let i = 0; i < steps; i++) {
+        const angle = (i / steps) * 2 * Math.PI;
+        candidates.push(new BABYLON.Vector3(
+          sourceOrigin.x + Math.round(Math.cos(angle) * radius / step) * step,
+          sourceOrigin.y,
+          sourceOrigin.z + Math.round(Math.sin(angle) * radius / step) * step,
+        ));
+      }
+      for (const c of candidates) {
+        if (isClear(c)) return c;
+      }
+    }
+    // Fallback
+    return new BABYLON.Vector3(sourceOrigin.x + 20, sourceOrigin.y, sourceOrigin.z + 20);
+  }
+
+  /**
+   * Duplicate the selected vector.
+   * @param constrainToSameAxis  ctrl+d = same vertical axis, ctrl+D = anywhere
+   */
+  duplicateSelected(constrainToSameAxis: boolean, randomColor: () => BABYLON.Color3) {
+    const key = this.selectedKey;
+    if (!key) return;
+    const src = this.getVector(key);
+    if (!src) return;
+
+    const newOrigin = this.findEmptyOrigin(constrainToSameAxis, src.origin);
+    const count = this.getVectors().length + 1;
+    const newKey = `${src.label}-copy-${count}`;
+
+    this.addVector({
+      key: newKey,
+      label: newKey,
+      type: "base",
+      origin: newOrigin,
+      value: src.value.clone(),
+      display: { color: randomColor() },
+      vector: null,
+    });
+
+    this.selectVector(newKey);
+  }
+
+  /**
+   * Duplicate the selected vector with its direction negated (opposite).
+   * @param constrainToSameAxis  ctrl+o = same vertical axis, ctrl+O = anywhere
+   */
+  duplicateOppositeSelected(constrainToSameAxis: boolean, randomColor: () => BABYLON.Color3) {
+    const key = this.selectedKey;
+    if (!key) return;
+    const src = this.getVector(key);
+    if (!src) return;
+
+    const newOrigin = this.findEmptyOrigin(constrainToSameAxis, src.origin);
+    const count = this.getVectors().length + 1;
+    const newKey = `${src.label}-opp-${count}`;
+
+    this.addVector({
+      key: newKey,
+      label: newKey,
+      type: "base",
+      origin: newOrigin,
+      value: src.value.negate(),  // opposite direction
+      display: { color: randomColor() },
+      vector: null,
+    });
+
+    this.selectVector(newKey);
+  }
 }

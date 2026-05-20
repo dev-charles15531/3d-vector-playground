@@ -35,6 +35,12 @@ export class CameraController {
     this.canvas = canvas;
     this.defaultRadius = camera.radius;
     this.targetY = targetY;
+
+    // BabylonJS ArcRotateCamera uses Ctrl+drag to pan the camera target by
+    // default. We repurpose Ctrl for vector-origin dragging, so we must
+    // disable that built-in behaviour. Setting panningSensibility to 0
+    // completely disables pointer-based panning of the scene target/origin.
+    this.camera.panningSensibility = 0;
   }
 
   /** Smoothly animate to a preset view */

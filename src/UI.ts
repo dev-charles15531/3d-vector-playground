@@ -32,6 +32,9 @@ export class UI {
   private freezeBtn!: Button;
   private hcBtn!: Button;
   private idleBtn!: Button;
+  private compactBtn!: Button;
+
+  private compactMode = true; // on by default
 
   constructor(
     scene: BABYLON.Scene,
@@ -156,6 +159,17 @@ export class UI {
     });
     this.snapBtn.paddingRight = "6px";
     row.addControl(this.snapBtn);
+
+    // Compact — ON by default: caps the magnitude of newly added vectors to 4.5
+    this.compactBtn = this.makeToolBtn("Compact", () => {
+      this.compactMode = !this.compactMode;
+      this.compactBtn.background = this.compactMode ? "#7C3AED" : "#1E293B";
+      this.compactBtn.color = this.compactMode ? "#EDE9FE" : "#94A3B8";
+    });
+    this.compactBtn.background = "#7C3AED"; // starts ON
+    this.compactBtn.color = "#EDE9FE";
+    this.compactBtn.paddingRight = "6px";
+    row.addControl(this.compactBtn);
 
     row.addControl(this.makeDivider());
 
@@ -815,6 +829,8 @@ export class UI {
       if (!pendingResult) return;
       const count = this.engine.getVectors().length + 1;
       const key = `${pendingLabel}-${count}`;
+      const depA = leftSelect.text.trim();
+      const depB = rightSelect.text.trim();
       this.engine.addVector({
         key,
         label: key,
@@ -823,7 +839,7 @@ export class UI {
         value: pendingResult.clone(),
         display: { color: this.randomLightColor3() },
         vector: null,
-        dependencies: [],
+        dependencies: [depA, depB].filter(Boolean),
         operation: undefined,
       });
       this.refreshVectorList();
@@ -879,16 +895,31 @@ export class UI {
   private addVector() {
     const count = this.engine.getVectors().length + 1;
     const mag = this.engine.getMaxMagnitude();
+
+    let value: BABYLON.Vector3;
+    if (this.compactMode) {
+      // Each component is capped so the magnitude can never exceed 4.5.
+      // Max per-component = 4.5 / √3 ≈ 2.598, which means the worst case
+      // (all three at max) still only reaches exactly 4.5. In practice
+      // the random mix of signs and magnitudes produces a healthy range.
+      const compMax = 4.5 / Math.sqrt(3);
+      const compMaxInt = Math.floor(compMax * 10); // work in tenths for randRange
+      const rand = () => (this.randRange(-compMaxInt, compMaxInt) / 10);
+      value = new BABYLON.Vector3(rand(), rand(), rand());
+    } else {
+      value = new BABYLON.Vector3(
+        this.randRange(-mag, mag) / 2,
+        this.randRange(-mag, mag) / 2,
+        this.randRange(-mag, mag) / 2,
+      );
+    }
+
     this.engine.addVector({
       key: "Vector-" + count,
       label: "Vector-" + count,
       type: "base",
       origin: BABYLON.Vector3.Zero(),
-      value: new BABYLON.Vector3(
-        this.randRange(-mag, mag) / 2,
-        this.randRange(-mag, mag) / 2,
-        this.randRange(-mag, mag) / 2,
-      ),
+      value,
       display: { color: this.randomLightColor3() },
       vector: null,
     });

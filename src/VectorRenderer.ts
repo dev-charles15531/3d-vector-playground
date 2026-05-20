@@ -54,18 +54,36 @@ export class VectorRenderer {
     if (this.headToTail) {
       const chainStart = new BABYLON.Vector3(0, 0, 0);
       let currentOrigin = chainStart.clone();
+
+      // Build a key→Arrow map for dependency lookups
+      const byKey = new Map<string, Arrow>();
+      for (const v of vectors) byKey.set(v.key, v);
+
       for (const v of vectors) {
         if (!v.vector) continue;
-        if (v.type === "derived") continue;
+
+        if (v.type === "derived" && v.dependencies && v.dependencies.length > 0) {
+          // Place derived vector at the rendered tail of its first dependency:
+          // tail = renderedOrigin(depA) + depA.value
+          const depA = byKey.get(v.dependencies[0]);
+          if (depA) {
+            const depOrigin = this.renderedOrigins.get(depA.key) ?? chainStart.clone();
+            const derivedOrigin = depOrigin.add(depA.value);
+
+            // this.renderedOrigins.set(v.key, derivedOrigin.clone());
+            // v.vector.update(derivedOrigin, v.value);
+
+            this.renderedOrigins.set(v.key, depOrigin.clone());
+            v.vector.update(depOrigin, v.value);
+            // Derived vectors do not advance the base chain
+            continue;
+          }
+        }
+
+        // Base vector (or derived with no dependency info): slot into chain normally
         this.renderedOrigins.set(v.key, currentOrigin.clone());
         v.vector.update(currentOrigin, v.value);
         currentOrigin = currentOrigin.add(v.value);
-      }
-      for (const v of vectors) {
-        if (!v.vector) continue;
-        if (v.type !== "derived") continue;
-        this.renderedOrigins.set(v.key, chainStart.clone());
-        v.vector.update(chainStart, v.value);
       }
       return;
     }
@@ -76,8 +94,14 @@ export class VectorRenderer {
   }
 
   update(v: Arrow) {
-    // Single-arrow update: keep renderedOrigins in sync for normal mode.
-    // Head-to-tail re-orders the whole chain so always use refresh() there.
+    // In head-to-tail mode the chain positions are owned by refresh() —
+    // calling update() with v.origin (which is always 0,0,0 for chained
+    // vectors) would overwrite the correct accumulated positions.
+    // Just delegate to refresh() so the whole chain stays consistent.
+    // (refresh() is O(n) but n is always tiny here.)
+    if (this.headToTail) return; // refresh() is called by the engine after every update
+
+    // Normal mode: keep renderedOrigins in sync with the actual origin.
     this.renderedOrigins.set(v.key, v.origin.clone());
     v.vector?.update(v.origin, v.value);
   }
