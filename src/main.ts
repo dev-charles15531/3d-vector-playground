@@ -382,6 +382,93 @@ class Playground {
       }
     };
 
+    // ── Shared color generator (used by keyboard shortcuts below) ─────────
+    let _lastHue: number | null = null;
+    const randomLightColor3 = (minHueGap = 40): BABYLON.Color3 => {
+      const pickHue = (): number => {
+        const h = Math.floor(Math.random() * 360);
+        if (_lastHue === null) return h;
+        const diff = Math.abs(h - _lastHue);
+        return diff >= minHueGap && Math.abs(diff - 360) >= minHueGap
+          ? h
+          : pickHue();
+      };
+      const h = pickHue();
+      _lastHue = h;
+      const s = 60 + Math.random() * 40;
+      const l = 72 + Math.random() * 16;
+      const hNorm = h / 360, sNorm = s / 100, lNorm = l / 100;
+      const hue2rgb = (p: number, q: number, t: number) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1 / 6) return p + (q - p) * 6 * t;
+        if (t < 1 / 2) return q;
+        if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+        return p;
+      };
+      let r, g, b;
+      if (sNorm === 0) {
+        r = g = b = lNorm;
+      } else {
+        const q = lNorm < 0.5 ? lNorm * (1 + sNorm) : lNorm + sNorm - lNorm * sNorm;
+        const p = 2 * lNorm - q;
+        r = hue2rgb(p, q, hNorm + 1 / 3);
+        g = hue2rgb(p, q, hNorm);
+        b = hue2rgb(p, q, hNorm - 1 / 3);
+      }
+      return new BABYLON.Color3(r, g, b);
+    };
+
+
+    // ── Keyboard shortcuts ────────────────────────────────────────────────
+    // F       → focus selected vector (animated zoom to arrow midpoint)
+    // Esc     → deselect + reset view
+    // Ctrl+D  → duplicate selected vector on same vertical axis (empty spot)
+    // Ctrl+Shift+D (Ctrl+D uppercase) → duplicate selected vector anywhere
+    // Ctrl+O  → duplicate selected vector (opposite direction) on same vertical axis
+    // Ctrl+Shift+O (Ctrl+O uppercase) → duplicate opposite direction anywhere
+    window.addEventListener("keydown", (e) => {
+      // Don't fire when typing in an input field
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
+
+      if (e.key === "f" || e.key === "F") {
+        const key = vecEngine.getSelectedKey();
+        if (!key) return;
+        const arrow = vecEngine.getVector(key);
+        if (!arrow) return;
+        const renderedOrigin = renderer
+          .getRenderedOrigin(key, arrow.origin)
+          .add(new BABYLON.Vector3(0, defaultOriginHeight, 0));
+        cameraController.focusVector(renderedOrigin, arrow.value);
+      }
+
+      if (e.key === "Escape") {
+        vecEngine.selectVector(null);
+        cameraController.resetView();
+      }
+
+      // ── Ctrl+d / Ctrl+D  →  duplicate ────────────────────────────────
+      // e.key === "d"  when Ctrl+d (lowercase, same axis)
+      // e.key === "D"  when Ctrl+Shift+D (uppercase, anywhere)
+      if (e.ctrlKey && (e.key === "d" || e.key === "D")) {
+        e.preventDefault();
+        const sameAxis = e.key === "d"; // lowercase = same vertical axis
+        vecEngine.duplicateSelected(sameAxis, randomLightColor3);
+      }
+
+      // ── Ctrl+o / Ctrl+O  →  duplicate opposite ────────────────────────
+      // e.key === "o"  when Ctrl+o (lowercase, same axis)
+      // e.key === "O"  when Ctrl+Shift+O (uppercase, anywhere)
+      if (e.ctrlKey && (e.key === "o" || e.key === "O")) {
+        e.preventDefault();
+        const sameAxis = e.key === "o"; // lowercase = same vertical axis
+        vecEngine.duplicateOppositeSelected(sameAxis, randomLightColor3);
+      }
+    });
     window.addEventListener("pointermove", resetIdleTimer, { passive: true });
     window.addEventListener("pointerdown", resetIdleTimer, { passive: true });
     window.addEventListener("keydown", resetIdleTimer, { passive: true });
