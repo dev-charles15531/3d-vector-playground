@@ -11,14 +11,25 @@ type Wall = {
 export class Lab {
   private scene: BABYLON.Scene;
   private labSize: number;
-  private grid: GridMaterial;
+  private wallGrid: GridMaterial;
   public glassCube: BABYLON.Mesh;
   private backWalls: Wall[] = [];
 
-  constructor(scene: BABYLON.Scene, size: number, grid: GridMaterial) {
+  constructor(scene: BABYLON.Scene, size: number, _floorGrid: GridMaterial) {
     this.scene = scene;
     this.labSize = size;
-    this.grid = grid;
+
+    // Wall-specific grid material — separate from floor to prevent moiré.
+    // Walls are viewed at oblique angles from inside, so they need larger
+    // cells and lower opacity than the floor.
+    this.wallGrid = new GridMaterial("wall-grid", this.scene);
+    this.wallGrid.gridRatio = 5;
+    this.wallGrid.majorUnitFrequency = 1;
+    this.wallGrid.minorUnitVisibility = 0;
+    this.wallGrid.opacity = 0.07;
+    this.wallGrid.mainColor = new BABYLON.Color3(0.02, 0.03, 0.04);
+    this.wallGrid.lineColor = new BABYLON.Color3(0.07, 0.08, 0.11);
+    this.wallGrid.backFaceCulling = false;
 
     this.glassCube = BABYLON.MeshBuilder.CreateBox(
       "this.glassCube",
@@ -43,7 +54,7 @@ export class Lab {
     this.glassCube.edgesColor = new BABYLON.Color4(1, 1.2, 1, 5);
     this.glassCube.renderingGroupId = 0;
 
-    // Grid walls
+    // Grid walls — use wall-specific grid, not the shared floor grid
     this.createBackWallGrid(
       new BABYLON.Vector3(this.labSize / 2, this.glassCube.position.y, 0),
       new BABYLON.Vector3(-1, 0, 0),
@@ -64,43 +75,13 @@ export class Lab {
     const offset = this.labSize / 2 + 0.5;
 
     // Positive axis ends
-    this.createLabel(
-      "+X",
-      new BABYLON.Vector3(offset, this.labSize / 2, 0),
-      new BABYLON.Color3(1, 0.3, 0.3),
-      this.scene,
-    );
-    this.createLabel(
-      "+Y",
-      new BABYLON.Vector3(0, this.labSize + 0.5, 0),
-      new BABYLON.Color3(0.3, 1, 0.3),
-      this.scene,
-    );
-    this.createLabel(
-      "+Z",
-      new BABYLON.Vector3(0, this.labSize / 2, offset),
-      new BABYLON.Color3(0.3, 0.5, 1),
-      this.scene,
-    );
+    this.createLabel("+X", new BABYLON.Vector3(offset, this.labSize / 2, 0), new BABYLON.Color3(1, 0.3, 0.3), this.scene);
+    this.createLabel("+Y", new BABYLON.Vector3(0, this.labSize + 0.5, 0), new BABYLON.Color3(0.3, 1, 0.3), this.scene);
+    this.createLabel("+Z", new BABYLON.Vector3(0, this.labSize / 2, offset), new BABYLON.Color3(0.3, 0.5, 1), this.scene);
     // Negative axis ends
-    this.createLabel(
-      "-X",
-      new BABYLON.Vector3(-offset, this.labSize / 2, 0),
-      new BABYLON.Color3(1, 0.3, 0.3),
-      this.scene,
-    );
-    this.createLabel(
-      "-Y",
-      new BABYLON.Vector3(0, -0.5, 0),
-      new BABYLON.Color3(0.3, 1, 0.3),
-      this.scene,
-    );
-    this.createLabel(
-      "-Z",
-      new BABYLON.Vector3(0, this.labSize / 2, -offset),
-      new BABYLON.Color3(0.3, 0.5, 1),
-      this.scene,
-    );
+    this.createLabel("-X", new BABYLON.Vector3(-offset, this.labSize / 2, 0), new BABYLON.Color3(1, 0.3, 0.3), this.scene);
+    this.createLabel("-Y", new BABYLON.Vector3(0, -0.5, 0), new BABYLON.Color3(0.3, 1, 0.3), this.scene);
+    this.createLabel("-Z", new BABYLON.Vector3(0, this.labSize / 2, -offset), new BABYLON.Color3(0.3, 0.5, 1), this.scene);
 
     const points = [
       [
@@ -120,24 +101,17 @@ export class Lab {
     this.createFaintDashedAxis("zAxis", points[2], faintGray);
 
     const zoomThreshold = this.labSize * 1.5;
-    // Fade edges based on camera distance to cube center.
-    // fadeOutDist: edges fully visible beyond this radius.
-    // fadeInDist:  edges fully gone at or below this radius.
-    // These are tuned so the fade begins just before entering the cube face
-    // and completes a little way inside — and stays gone as you zoom further.
     const half = this.labSize / 2;
-    const fadeOutDist = half * 2; // start fading as you approach the surface
-    const fadeInDist = half * 1; // fully gone once well inside
+    const fadeOutDist = half * 2;
+    const fadeInDist = half * 1;
 
     this.scene.onBeforeRenderObservable.add(() => {
       const camera = this.scene.activeCamera;
       if (!(camera instanceof BABYLON.ArcRotateCamera)) return;
 
-      // Distance from camera to the cube's world-space centre
       const cubeCenter = this.glassCube.position;
       const dist = BABYLON.Vector3.Distance(camera.position, cubeCenter);
 
-      // t = 1 → far away (full edges), t = 0 → close / inside (no edges)
       const t = Math.max(
         0,
         Math.min(1, (dist - fadeInDist) / (fadeOutDist - fadeInDist)),
@@ -146,7 +120,6 @@ export class Lab {
       this.glassCube.edgesColor = new BABYLON.Color4(1, 1.2, 1, t * 5);
       glassMat.alpha = t * 0.3;
 
-      // Grid walls: show only back-facing walls when zoomed out
       const isZoomedOut = camera.radius > zoomThreshold;
       this.backWalls.forEach(({ mesh, normal }) => {
         const toTarget = camera.target.subtract(mesh.position).normalize();
@@ -177,7 +150,6 @@ export class Lab {
     color: BABYLON.Color3,
     scene: BABYLON.Scene,
   ) => {
-    // Plane width scales with text length so "+X" fits as well as single chars
     const planeSize = 0.5 + text.length * 0.28;
     const plane = BABYLON.MeshBuilder.CreatePlane(
       "label-" + text,
@@ -225,7 +197,7 @@ export class Lab {
       this.scene,
     );
     wall.position = pos;
-    wall.material = this.grid;
+    wall.material = this.wallGrid; // uses wall-specific grid, not floor grid
 
     const up = BABYLON.Vector3.Forward();
     const dot = BABYLON.Vector3.Dot(up, normal);

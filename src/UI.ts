@@ -34,7 +34,7 @@ export class UI {
   private idleBtn!: Button;
   private compactBtn!: Button;
 
-  private compactMode = true; // on by default
+  private compactMode = true;
 
   constructor(
     scene: BABYLON.Scene,
@@ -45,11 +45,41 @@ export class UI {
     this.engine = engine;
     this.dragController = dragController;
     this.cameraController = cameraController;
+
     this.advancedTexture = AdvancedDynamicTexture.CreateFullscreenUI(
       "UI",
       true,
       scene,
     );
+
+    // ── Fix 1: FXAA post-processing blurs the GUI ─────────────────────────
+    // DefaultRenderingPipeline's FXAA pass runs over the entire composited
+    // frame, including the GUI layer. Every text glyph and border gets
+    // softened by the anti-aliasing kernel — that's the blur you see.
+    // Setting applyPostProcess = false makes the GUI layer render after
+    // the FXAA pass, bypassing it entirely. 3D geometry still gets FXAA.
+    if (this.advancedTexture.layer) {
+      this.advancedTexture.layer.applyPostProcess = false;
+    }
+
+    // ── Fix 2: HiDPI coordinate space ────────────────────────────────────
+    // Without this, the ADT layout space = physical pixels (e.g. 3840).
+    // fontSize:13 = 13 physical px on a 3840-wide texture = appears tiny.
+    // We set widthInPixels = CSS logical width so font sizes are CSS pixels,
+    // and scaleX = dpr so rendering fills physical pixels at native sharpness.
+    const applyHiDPI = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const canvas = scene.getEngine().getRenderingCanvas();
+      const cssW = canvas ? canvas.clientWidth : window.innerWidth;
+      const cssH = canvas ? canvas.clientHeight : window.innerHeight;
+      const rc = this.advancedTexture.rootContainer;
+      rc.scaleX = dpr;
+      rc.scaleY = dpr;
+      rc.widthInPixels = cssW;
+      rc.heightInPixels = cssH;
+    };
+    applyHiDPI();
+    scene.getEngine().onResizeObservable.add(applyHiDPI);
 
     this.buildUI();
 
@@ -57,7 +87,6 @@ export class UI {
       this.refreshVectorList();
     });
 
-    // Wire camera controller callbacks to update button styles
     this.cameraController.onFreezeChanged = (frozen) => {
       this.freezeBtn.background = frozen ? "#EF4444" : "#1E293B";
       this.freezeBtn.color = frozen ? "#fff" : "#94A3B8";
@@ -78,12 +107,12 @@ export class UI {
   }
 
   private buildUI() {
-    // ── Bottom strip (vector list) ──────────────────────────────────────────
+    // Bottom strip — tighter than original (130px vs 160px)
     const root = new Rectangle();
     root.width = "100%";
-    root.height = "160px";
+    root.height = "130px";
     root.thickness = 0;
-    root.background = "#0A0F1EDD";
+    root.background = "#0A0F1EE8";
     root.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this.advancedTexture.addControl(root);
 
@@ -91,7 +120,7 @@ export class UI {
     scroll.width = "100%";
     scroll.height = "100%";
     scroll.thickness = 0;
-    scroll.barSize = 5;
+    scroll.barSize = 4;
     scroll.horizontalBar.isVisible = true;
     scroll.verticalBar.isVisible = false;
     root.addControl(scroll);
@@ -102,22 +131,15 @@ export class UI {
     scroll.addControl(this.contentPanel);
 
     this.refreshVectorList();
-
-    // ── Top toolbar ─────────────────────────────────────────────────────────
     this.buildToolbar();
   }
-
-  // ── Toolbar ──────────────────────────────────────────────────────────────
-  // Layout: [section pill] [btn] [btn] ... | [section pill] [btn] ...
-  // Each section is visually separated by a vertical rule. Buttons have
-  // consistent 6px right margin so they don't stack against the divider.
 
   private buildToolbar() {
     const bar = new Rectangle();
     bar.width = "100%";
-    bar.height = "44px";
+    bar.height = "38px";
     bar.thickness = 0;
-    bar.background = "#090D1BF2";
+    bar.background = "#080C18F5";
     bar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.advancedTexture.addControl(bar);
 
@@ -126,16 +148,16 @@ export class UI {
     row.width = "100%";
     row.height = "100%";
     row.paddingLeft = "10px";
-    row.paddingTop = "6px";
-    row.paddingBottom = "6px";
+    row.paddingTop = "5px";
+    row.paddingBottom = "5px";
     bar.addControl(row);
 
     // ── MODE ───────────────────────────────────────────────────────────────
     row.addControl(this.makeSectionPill("MODE"));
 
     const htCheck = new Checkbox();
-    htCheck.width = "15px";
-    htCheck.height = "15px";
+    htCheck.width = "14px";
+    htCheck.height = "14px";
     htCheck.color = "#38BDF8";
     htCheck.background = "#1E293B";
     htCheck.isChecked = this.engine.getHeadToTail();
@@ -143,7 +165,7 @@ export class UI {
       this.engine.setHeadToTail(v),
     );
     const htWrap = this.wrapWithLabel(htCheck, "Head-to-Tail");
-    htWrap.paddingRight = "10px";
+    htWrap.paddingRight = "8px";
     row.addControl(htWrap);
 
     row.addControl(this.makeDivider());
@@ -157,18 +179,17 @@ export class UI {
       this.snapBtn.background = !on ? "#22C55E" : "#1E293B";
       this.snapBtn.color = !on ? "#000" : "#94A3B8";
     });
-    this.snapBtn.paddingRight = "6px";
+    this.snapBtn.paddingRight = "4px";
     row.addControl(this.snapBtn);
 
-    // Compact — ON by default: caps the magnitude of newly added vectors to 4.5
     this.compactBtn = this.makeToolBtn("Compact", () => {
       this.compactMode = !this.compactMode;
       this.compactBtn.background = this.compactMode ? "#7C3AED" : "#1E293B";
       this.compactBtn.color = this.compactMode ? "#EDE9FE" : "#94A3B8";
     });
-    this.compactBtn.background = "#7C3AED"; // starts ON
+    this.compactBtn.background = "#7C3AED";
     this.compactBtn.color = "#EDE9FE";
-    this.compactBtn.paddingRight = "6px";
+    this.compactBtn.paddingRight = "4px";
     row.addControl(this.compactBtn);
 
     row.addControl(this.makeDivider());
@@ -186,7 +207,7 @@ export class UI {
       const btn = this.makeToolBtn(label, () =>
         this.cameraController.goToPreset(preset),
       );
-      btn.paddingRight = "4px";
+      btn.paddingRight = "3px";
       row.addControl(btn);
     });
 
@@ -198,22 +219,21 @@ export class UI {
     this.freezeBtn = this.makeToolBtn("Freeze Scene", () =>
       this.cameraController.toggleFreeze(),
     );
-    this.freezeBtn.paddingRight = "4px";
+    this.freezeBtn.paddingRight = "3px";
     row.addControl(this.freezeBtn);
 
     this.hcBtn = this.makeToolBtn("High Contrast", () => {
       this.cameraController.toggleHighContrast();
     });
-    this.hcBtn.paddingRight = "4px";
+    this.hcBtn.paddingRight = "3px";
     row.addControl(this.hcBtn);
 
-    // Idle orbit toggle — ON by default, matching CameraController's initial state
     this.idleBtn = this.makeToolBtn("Orbit", () => {
       this.cameraController.toggleIdle();
     });
-    this.idleBtn.background = "#1E3A5F"; // on = tinted blue
+    this.idleBtn.background = "#1E3A5F";
     this.idleBtn.color = "#7DD3FC";
-    this.idleBtn.paddingRight = "6px";
+    this.idleBtn.paddingRight = "5px";
     row.addControl(this.idleBtn);
 
     row.addControl(this.makeDivider());
@@ -228,62 +248,60 @@ export class UI {
     row.addControl(shareBtn);
   }
 
-  // ── Toast notification ───────────────────────────────────────────────────
+  // ── Toast ─────────────────────────────────────────────────────────────────
 
   private showToast(message: string) {
     const toast = new Rectangle();
     toast.width = "200px";
-    toast.height = "36px";
-    toast.cornerRadius = 8;
+    toast.height = "30px";
+    toast.cornerRadius = 7;
     toast.background = "#22C55EEE";
     toast.thickness = 0;
     toast.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     toast.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    toast.top = "55px";
+    toast.top = "46px";
     this.advancedTexture.addControl(toast);
 
     const txt = new TextBlock();
     txt.text = message;
     txt.color = "white";
-    txt.fontSize = 13;
+    txt.fontSize = 12;
     toast.addControl(txt);
 
-    // Auto-remove after 2s
     setTimeout(() => {
       this.advancedTexture.removeControl(toast);
       toast.dispose();
     }, 2000);
   }
 
-  // ── Toolbar helper widgets ────────────────────────────────────────────────
+  // ── Toolbar helpers ───────────────────────────────────────────────────────
 
   private makeToolBtn(text: string, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton("tbtn-" + text, text);
-    btn.width = text.length * 7 + 24 + "px";
-    btn.height = "28px";
+    btn.width = text.length * 7 + 22 + "px";
+    btn.height = "26px";
     btn.fontSize = 11;
     btn.color = "#94A3B8";
     btn.background = "#1E293B";
-    btn.cornerRadius = 5;
+    btn.cornerRadius = 4;
     btn.thickness = 1;
     btn.onPointerUpObservable.add(onClick);
     return btn;
   }
 
-  /** Compact coloured pill label that anchors each toolbar section */
   private makeSectionPill(text: string): Rectangle {
     const pill = new Rectangle();
-    pill.width = text.length * 6.5 + 14 + "px";
-    pill.height = "18px";
-    pill.cornerRadius = 9;
+    pill.width = text.length * 6 + 14 + "px";
+    pill.height = "16px";
+    pill.cornerRadius = 8;
     pill.background = "#1E3A5F";
     pill.thickness = 0;
-    pill.paddingRight = "6px";
+    pill.paddingRight = "5px";
 
     const lbl = new TextBlock();
     lbl.text = text;
     lbl.color = "#7DD3FC";
-    lbl.fontSize = 8.5;
+    lbl.fontSize = 8;
     lbl.fontFamily = "monospace";
     lbl.fontStyle = "bold";
     pill.addControl(lbl);
@@ -293,27 +311,27 @@ export class UI {
   private makeDivider(): Rectangle {
     const d = new Rectangle();
     d.width = "1px";
-    d.height = "22px";
+    d.height = "20px";
     d.background = "#1E293B";
     d.thickness = 0;
-    d.paddingLeft = "8px";
-    d.paddingRight = "8px";
+    d.paddingLeft = "7px";
+    d.paddingRight = "7px";
     return d;
   }
 
   private wrapWithLabel(control: Control, labelText: string): StackPanel {
     const wrap = new StackPanel();
     wrap.isVertical = false;
-    wrap.width = labelText.length * 7 + 36 + "px";
-    wrap.height = "28px";
+    wrap.width = labelText.length * 7 + 34 + "px";
+    wrap.height = "26px";
 
     const lbl = new TextBlock();
     lbl.text = labelText;
     lbl.width = labelText.length * 7 + 6 + "px";
-    lbl.height = "28px";
+    lbl.height = "26px";
     lbl.color = "#94A3B8";
     lbl.fontSize = 11;
-    lbl.paddingLeft = "5px";
+    lbl.paddingLeft = "4px";
 
     wrap.addControl(control);
     wrap.addControl(lbl);
@@ -333,20 +351,20 @@ export class UI {
 
   private createAddButton(): Rectangle {
     const box = new Rectangle();
-    box.width = "56px";
-    box.height = "120px";
+    box.width = "48px";
+    box.height = "100px";
     box.thickness = 1;
     box.color = "#22C55E";
-    box.cornerRadius = 8;
+    box.cornerRadius = 7;
     box.paddingLeft = "4px";
     box.paddingTop = "4px";
     box.paddingBottom = "4px";
 
     const btn = Button.CreateSimpleButton("add", "+");
-    btn.fontSize = 26;
+    btn.fontSize = 24;
     btn.color = "white";
     btn.background = "#16A34A";
-    btn.cornerRadius = 6;
+    btn.cornerRadius = 5;
     btn.onPointerUpObservable.add(() => this.addVector());
     box.addControl(btn);
     return box;
@@ -355,16 +373,14 @@ export class UI {
   private createVectorBlock(arrow: Arrow): Rectangle {
     const isSelected = this.engine.getSelectedKey() === arrow.key;
     const accentHex = arrow.display?.color?.toHexString() ?? "#2563EB";
-
-    // Height grows when selected to show the keymap hint row
-    const boxHeight = isSelected ? "148px" : "120px";
+    const boxHeight = isSelected ? "122px" : "100px";
 
     const box = new Rectangle();
-    box.width = "270px";
+    box.width = "220px";
     box.height = boxHeight;
     box.thickness = isSelected ? 2 : 1;
     box.color = isSelected ? accentHex : "#334155";
-    box.cornerRadius = 8;
+    box.cornerRadius = 7;
     box.background = isSelected ? "#1A2744EE" : "#1E293BCC";
     box.paddingLeft = "5px";
     box.paddingRight = "5px";
@@ -383,27 +399,26 @@ export class UI {
     // ── Top row: label + axis locks + remove ────────────────────────────
     const topRow = new StackPanel();
     topRow.isVertical = false;
-    topRow.height = "24px";
+    topRow.height = "22px";
     stack.addControl(topRow);
 
     const label = new TextBlock();
     label.text = arrow.label;
-    label.width = "100px";
+    label.width = "88px";
     label.color = accentHex;
-    label.fontSize = 12;
+    label.fontSize = 11;
     label.fontStyle = "bold";
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     topRow.addControl(label);
 
-    // Axis lock buttons X/Y/Z
     (["x", "y", "z"] as const).forEach((axis) => {
       const lockKey = `${arrow.key}-lock-${axis}`;
       const isLocked = arrow.lockedAxes?.includes(axis) ?? false;
       const axisColor = { x: "#EF4444", y: "#22C55E", z: "#3B82F6" }[axis];
       const lockBtn = Button.CreateSimpleButton(lockKey, axis.toUpperCase());
-      lockBtn.width = "18px";
-      lockBtn.height = "18px";
-      lockBtn.fontSize = 9;
+      lockBtn.width = "17px";
+      lockBtn.height = "17px";
+      lockBtn.fontSize = 8;
       lockBtn.color = isLocked ? "#000" : "#fff";
       lockBtn.background = isLocked ? axisColor : "#475569";
       lockBtn.cornerRadius = 3;
@@ -415,13 +430,13 @@ export class UI {
     });
 
     const removeBtn = Button.CreateSimpleButton("rm-" + arrow.key, "✕");
-    removeBtn.width = "20px";
-    removeBtn.height = "20px";
-    removeBtn.fontSize = 11;
+    removeBtn.width = "18px";
+    removeBtn.height = "18px";
+    removeBtn.fontSize = 10;
     removeBtn.color = "white";
     removeBtn.background = "#DC2626";
-    removeBtn.cornerRadius = 4;
-    removeBtn.paddingLeft = "4px";
+    removeBtn.cornerRadius = 3;
+    removeBtn.paddingLeft = "3px";
     removeBtn.onPointerUpObservable.add(() => {
       this.engine.removeVector(arrow.key);
       this.refreshVectorList();
@@ -430,30 +445,27 @@ export class UI {
 
     // ── Vector and origin inputs ─────────────────────────────────────────
     stack.addControl(this.createVecInputRow("V", arrow, arrow.value, "value"));
-    stack.addControl(
-      this.createVecInputRow("O", arrow, arrow.origin, "origin"),
-    );
+    stack.addControl(this.createVecInputRow("O", arrow, arrow.origin, "origin"));
 
     // ── Bottom row: magnitude + overlay toggles ──────────────────────────
     const bottomRow = new StackPanel();
     bottomRow.isVertical = false;
-    bottomRow.height = "22px";
+    bottomRow.height = "20px";
     stack.addControl(bottomRow);
 
     const magLabel = new TextBlock();
     magLabel.text = `|v|=${arrow.value.length().toFixed(2)}`;
     magLabel.color = "#64748B";
-    magLabel.fontSize = 9.5;
+    magLabel.fontSize = 9;
     magLabel.fontFamily = "monospace";
-    magLabel.width = "90px";
+    magLabel.width = "78px";
     magLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     bottomRow.addControl(magLabel);
 
-    // Components toggle
     const showComp = arrow.showComponents !== false;
     const compBtn = Button.CreateSimpleButton("comp-" + arrow.key, "XYZ");
-    compBtn.width = "30px";
-    compBtn.height = "16px";
+    compBtn.width = "28px";
+    compBtn.height = "15px";
     compBtn.fontSize = 8;
     compBtn.color = showComp ? "#000" : "#475569";
     compBtn.background = showComp ? "#38BDF8" : "#1E293B";
@@ -465,11 +477,10 @@ export class UI {
     });
     bottomRow.addControl(compBtn);
 
-    // Angle toggle
     const showAngle = arrow.showAngle !== false;
     const angleBtn = Button.CreateSimpleButton("angle-" + arrow.key, "∠");
-    angleBtn.width = "22px";
-    angleBtn.height = "16px";
+    angleBtn.width = "20px";
+    angleBtn.height = "15px";
     angleBtn.fontSize = 9;
     angleBtn.color = showAngle ? "#000" : "#475569";
     angleBtn.background = showAngle ? "#A78BFA" : "#1E293B";
@@ -482,13 +493,13 @@ export class UI {
     });
     bottomRow.addControl(angleBtn);
 
-    // ── Keymap hint (only when selected) ────────────────────────────────
+    // ── Keymap hint (selected only) ──────────────────────────────────────
     if (isSelected) {
       const hint = new Rectangle();
-      hint.height = "22px";
+      hint.height = "20px";
       hint.thickness = 1;
       hint.color = "#1E3A5F";
-      hint.cornerRadius = 4;
+      hint.cornerRadius = 3;
       hint.background = "#0F172A";
       hint.paddingTop = "2px";
       stack.addControl(hint);
@@ -499,16 +510,17 @@ export class UI {
 
       const makeHint = (key: string, desc: string, color = "#7DD3FC") => {
         const keyBadge = new Rectangle();
-        keyBadge.width = "18px";
-        keyBadge.height = "14px";
+        keyBadge.width = "16px";
+        keyBadge.height = "12px";
         keyBadge.cornerRadius = 3;
         keyBadge.background = "#1E3A5F";
         keyBadge.thickness = 0;
         keyBadge.paddingLeft = "4px";
+
         const keyTxt = new TextBlock();
         keyTxt.text = key;
         keyTxt.color = color;
-        keyTxt.fontSize = 8.5;
+        keyTxt.fontSize = 8;
         keyTxt.fontStyle = "bold";
         keyBadge.addControl(keyTxt);
 
@@ -516,9 +528,9 @@ export class UI {
         descTxt.text = desc;
         descTxt.color = "#475569";
         descTxt.fontSize = 8;
-        descTxt.width = desc.length * 5 + 4 + "px";
+        descTxt.width = desc.length * 4.5 + 4 + "px";
         descTxt.paddingLeft = "2px";
-        descTxt.paddingRight = "6px";
+        descTxt.paddingRight = "5px";
 
         hintRow.addControl(keyBadge);
         hintRow.addControl(descTxt);
@@ -539,13 +551,13 @@ export class UI {
   ): StackPanel {
     const row = new StackPanel();
     row.isVertical = false;
-    row.height = "28px";
+    row.height = "24px";
 
     const lbl = new TextBlock();
     lbl.text = labelStr + ":";
-    lbl.width = "18px";
+    lbl.width = "16px";
     lbl.color = "#FACC15";
-    lbl.fontSize = 10;
+    lbl.fontSize = 9;
     row.addControl(lbl);
 
     const axisColors = { x: "#FCA5A5", y: "#86EFAC", z: "#93C5FD" };
@@ -555,13 +567,13 @@ export class UI {
         field === "value" && (arrow.lockedAxes?.includes(axis) ?? false);
 
       const input = new InputText();
-      input.width = "48px";
-      input.height = "22px";
+      input.width = "56px";
+      input.height = "19px";
       input.text = Number(vec[axis]).toFixed(2);
       input.color = isLocked ? "#64748B" : axisColors[axis];
       input.background = isLocked ? "#1E293B" : "#334155";
       input.focusedBackground = "#334155";
-      input.fontSize = 11;
+      input.fontSize = 10;
       input.fontFamily = "monospace";
       input.isReadOnly = isLocked;
 
@@ -583,127 +595,112 @@ export class UI {
   }
 
   // ── Operations panel ─────────────────────────────────────────────────────
-  // Layout:
-  //   [A input] [op buttons: + − × proj] [B input]   →   Result box
-  //   Result shows: vector components + magnitude + a "Add to scene" button
 
   private addOperationsPanel() {
     const opBox = new Rectangle();
-    opBox.width = "400px";
-    opBox.height = "138px";
+    opBox.width = "340px";
+    opBox.height = "115px";
     opBox.thickness = 1;
     opBox.color = "#1E3A5F";
-    opBox.cornerRadius = 8;
+    opBox.cornerRadius = 7;
     opBox.background = "#09101EF0";
-    opBox.paddingLeft = "10px";
-    opBox.paddingRight = "10px";
-    opBox.paddingTop = "6px";
-    opBox.paddingBottom = "6px";
+    opBox.paddingLeft = "9px";
+    opBox.paddingRight = "9px";
+    opBox.paddingTop = "5px";
+    opBox.paddingBottom = "5px";
 
     const outer = new StackPanel();
     outer.isVertical = true;
     outer.height = "100%";
     opBox.addControl(outer);
 
-    // ── Header ────────────────────────────────────────────────────────────
     const header = new TextBlock();
     header.text = "OPERATIONS";
-    header.height = "14px";
+    header.height = "13px";
     header.color = "#7DD3FC";
-    header.fontSize = 8.5;
+    header.fontSize = 8;
     header.fontFamily = "monospace";
     header.fontStyle = "bold";
     header.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     outer.addControl(header);
 
-    // ── Main row: [A] [ops] [B]  |  result ───────────────────────────────
     const mainRow = new StackPanel();
     mainRow.isVertical = false;
-    mainRow.height = "106px";
+    mainRow.height = "90px";
     outer.addControl(mainRow);
 
-    // Left side: inputs + op buttons
+    // Left side: inputs + ops + dot
     const leftCol = new StackPanel();
     leftCol.isVertical = true;
-    leftCol.width = "230px";
+    leftCol.width = "192px";
     mainRow.addControl(leftCol);
 
-    // Input row
     const inputRow = new StackPanel();
     inputRow.isVertical = false;
-    inputRow.height = "28px";
-    inputRow.paddingBottom = "4px";
+    inputRow.height = "24px";
+    inputRow.paddingBottom = "3px";
     leftCol.addControl(inputRow);
 
     const makeVecInput = (placeholder: string) => {
       const i = new InputText();
-      i.width = "100px";
-      i.height = "24px";
+      i.width = "88px";
+      i.height = "21px";
       i.placeholderText = placeholder;
       i.text = "";
-      i.fontSize = 11;
+      i.fontSize = 10;
       i.color = "#E2E8F0";
       i.placeholderColor = "#475569";
       i.background = "#1E293B";
       i.focusedBackground = "#1E293B";
       i.thickness = 1;
-      i.paddingRight = "4px";
+      i.paddingRight = "3px";
       return i;
     };
 
-    const leftSelect = makeVecInput("Vector A  (key)");
-    const rightSelect = makeVecInput("Vector B  (key)");
+    const leftSelect = makeVecInput("Vector A");
+    const rightSelect = makeVecInput("Vector B");
     inputRow.addControl(leftSelect);
     inputRow.addControl(rightSelect);
 
-    // Op buttons row + dot product display on the same visual tier
     const opsRow = new StackPanel();
     opsRow.isVertical = false;
-    opsRow.height = "32px";
-    opsRow.spacing = 4;
+    opsRow.height = "26px";
+    opsRow.spacing = 3;
     leftCol.addControl(opsRow);
 
     type OpDef = {
       label: string;
       op: "add" | "subtract" | "cross" | "projection";
       color: string;
-      tip: string;
     };
     const opDefs: OpDef[] = [
-      { label: "A + B", op: "add", color: "#22C55E", tip: "Add" },
-      { label: "A − B", op: "subtract", color: "#F87171", tip: "Subtract" },
-      { label: "A × B", op: "cross", color: "#A78BFA", tip: "Cross product" },
-      {
-        label: "proj",
-        op: "projection",
-        color: "#38BDF8",
-        tip: "Projection of A onto B",
-      },
+      { label: "A+B", op: "add", color: "#22C55E" },
+      { label: "A−B", op: "subtract", color: "#F87171" },
+      { label: "A×B", op: "cross", color: "#A78BFA" },
+      { label: "proj", op: "projection", color: "#38BDF8" },
     ];
 
     opDefs.forEach(({ label, op, color }) => {
       const b = Button.CreateSimpleButton("op-" + op, label);
-      b.width = label.length * 6.5 + 18 + "px";
-      b.height = "26px";
-      b.fontSize = 10;
+      b.width = label.length * 6 + 14 + "px";
+      b.height = "22px";
+      b.fontSize = 9;
       b.color = color;
       b.background = "#1E293B";
-      b.cornerRadius = 5;
+      b.cornerRadius = 4;
       b.thickness = 1;
       b.onPointerUpObservable.add(() => perform(op));
       opsRow.addControl(b);
     });
 
-    // Dot product — same row height and border style as op buttons so it
-    // reads as a peer metric, not a buried footnote.
     const dotDisplay = new Rectangle();
-    dotDisplay.height = "26px";
-    dotDisplay.width = "82px";
-    dotDisplay.cornerRadius = 5;
+    dotDisplay.height = "22px";
+    dotDisplay.width = "90px";
+    dotDisplay.cornerRadius = 4;
     dotDisplay.background = "#1E293B";
     dotDisplay.thickness = 1;
     dotDisplay.color = "#FACC15";
-    dotDisplay.paddingLeft = "4px";
+    dotDisplay.paddingLeft = "3px";
     leftCol.addControl(dotDisplay);
 
     const dotInner = new StackPanel();
@@ -713,18 +710,18 @@ export class UI {
 
     const dotLabelTxt = new TextBlock();
     dotLabelTxt.text = "A·B = ";
-    dotLabelTxt.width = "36px";
+    dotLabelTxt.width = "32px";
     dotLabelTxt.color = "#FACC15";
-    dotLabelTxt.fontSize = 10;
+    dotLabelTxt.fontSize = 9;
     dotLabelTxt.fontStyle = "bold";
     dotLabelTxt.fontFamily = "monospace";
     dotInner.addControl(dotLabelTxt);
 
     const dotVal = new TextBlock();
     dotVal.text = "—";
-    dotVal.width = "42px";
+    dotVal.width = "52px";
     dotVal.color = "#E2E8F0";
-    dotVal.fontSize = 10;
+    dotVal.fontSize = 9;
     dotVal.fontFamily = "monospace";
     dotVal.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     dotInner.addControl(dotVal);
@@ -732,33 +729,33 @@ export class UI {
     // Divider
     const vDiv = new Rectangle();
     vDiv.width = "1px";
-    vDiv.height = "80px";
+    vDiv.height = "70px";
     vDiv.background = "#1E3A5F";
     vDiv.thickness = 0;
-    vDiv.paddingLeft = "8px";
-    vDiv.paddingRight = "8px";
+    vDiv.paddingLeft = "6px";
+    vDiv.paddingRight = "6px";
     mainRow.addControl(vDiv);
 
     // Result column
     const resultCol = new StackPanel();
     resultCol.isVertical = true;
-    resultCol.width = "140px";
+    resultCol.width = "118px";
     mainRow.addControl(resultCol);
 
     const resTitle = new TextBlock();
     resTitle.text = "Result";
-    resTitle.height = "14px";
+    resTitle.height = "13px";
     resTitle.color = "#FACC15";
-    resTitle.fontSize = 10;
+    resTitle.fontSize = 9;
     resTitle.fontStyle = "bold";
     resTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     resultCol.addControl(resTitle);
 
     const resCoords = new TextBlock();
     resCoords.text = "—";
-    resCoords.height = "42px";
+    resCoords.height = "38px";
     resCoords.color = "#E2E8F0";
-    resCoords.fontSize = 10;
+    resCoords.fontSize = 9;
     resCoords.fontFamily = "monospace";
     resCoords.textWrapping = true;
     resCoords.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -766,14 +763,13 @@ export class UI {
 
     const resMag = new TextBlock();
     resMag.text = "";
-    resMag.height = "14px";
+    resMag.height = "12px";
     resMag.color = "#64748B";
-    resMag.fontSize = 9;
+    resMag.fontSize = 8;
     resMag.fontFamily = "monospace";
     resMag.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     resultCol.addControl(resMag);
 
-    /** Recompute dot product whenever inputs change */
     const refreshDot = () => {
       const a = this.engine.getVector(leftSelect.text.trim());
       const b = this.engine.getVector(rightSelect.text.trim());
@@ -789,22 +785,18 @@ export class UI {
     leftSelect.onTextChangedObservable.add(refreshDot);
     rightSelect.onTextChangedObservable.add(refreshDot);
 
-    const addToSceneBtn = Button.CreateSimpleButton(
-      "addResult",
-      "+ Add to scene",
-    );
-    addToSceneBtn.width = "120px";
-    addToSceneBtn.height = "20px";
-    addToSceneBtn.fontSize = 10;
+    const addToSceneBtn = Button.CreateSimpleButton("addResult", "+ Add to scene");
+    addToSceneBtn.width = "108px";
+    addToSceneBtn.height = "18px";
+    addToSceneBtn.fontSize = 9;
     addToSceneBtn.color = "#22C55E";
     addToSceneBtn.background = "#052E16";
-    addToSceneBtn.cornerRadius = 4;
+    addToSceneBtn.cornerRadius = 3;
     addToSceneBtn.thickness = 1;
     addToSceneBtn.isEnabled = false;
     addToSceneBtn.alpha = 0.4;
     resultCol.addControl(addToSceneBtn);
 
-    // ── Logic ─────────────────────────────────────────────────────────────
     let pendingResult: BABYLON.Vector3 | null = null;
     let pendingLabel = "";
 
@@ -855,30 +847,20 @@ export class UI {
 
       let out: BABYLON.Vector3;
       switch (op) {
-        case "add":
-          out = a.value.add(b.value);
-          break;
-        case "subtract":
-          out = a.value.subtract(b.value);
-          break;
-        case "cross":
-          out = BABYLON.Vector3.Cross(a.value, b.value);
-          break;
+        case "add": out = a.value.add(b.value); break;
+        case "subtract": out = a.value.subtract(b.value); break;
+        case "cross": out = BABYLON.Vector3.Cross(a.value, b.value); break;
         case "projection": {
           const d = b.value.lengthSquared();
-          out =
-            d === 0
-              ? BABYLON.Vector3.Zero()
-              : b.value.scale(BABYLON.Vector3.Dot(a.value, b.value) / d);
+          out = d === 0
+            ? BABYLON.Vector3.Zero()
+            : b.value.scale(BABYLON.Vector3.Dot(a.value, b.value) / d);
           break;
         }
       }
 
       const labelMap = {
-        add: "Sum",
-        subtract: "Diff",
-        cross: "Cross",
-        projection: "Proj",
+        add: "Sum", subtract: "Diff", cross: "Cross", projection: "Proj",
       };
       displayResult(out!, labelMap[op]);
     };
@@ -898,12 +880,8 @@ export class UI {
 
     let value: BABYLON.Vector3;
     if (this.compactMode) {
-      // Each component is capped so the magnitude can never exceed 4.5.
-      // Max per-component = 4.5 / √3 ≈ 2.598, which means the worst case
-      // (all three at max) still only reaches exactly 4.5. In practice
-      // the random mix of signs and magnitudes produces a healthy range.
       const compMax = 4.5 / Math.sqrt(3);
-      const compMaxInt = Math.floor(compMax * 10); // work in tenths for randRange
+      const compMaxInt = Math.floor(compMax * 10);
       const rand = () => (this.randRange(-compMaxInt, compMaxInt) / 10);
       value = new BABYLON.Vector3(rand(), rand(), rand());
     } else {
@@ -939,9 +917,7 @@ export class UI {
     this.lastHue = h;
     const s = 60 + Math.random() * 40;
     const l = 72 + Math.random() * 16;
-    const hNorm = h / 360,
-      sNorm = s / 100,
-      lNorm = l / 100;
+    const hNorm = h / 360, sNorm = s / 100, lNorm = l / 100;
     const hue2rgb = (p: number, q: number, t: number) => {
       if (t < 0) t += 1;
       if (t > 1) t -= 1;
@@ -954,8 +930,7 @@ export class UI {
     if (sNorm === 0) {
       r = g = b = lNorm;
     } else {
-      const q =
-        lNorm < 0.5 ? lNorm * (1 + sNorm) : lNorm + sNorm - lNorm * sNorm;
+      const q = lNorm < 0.5 ? lNorm * (1 + sNorm) : lNorm + sNorm - lNorm * sNorm;
       const p = 2 * lNorm - q;
       r = hue2rgb(p, q, hNorm + 1 / 3);
       g = hue2rgb(p, q, hNorm);

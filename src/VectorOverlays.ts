@@ -43,7 +43,7 @@ export class VectorOverlays {
       for (const seg of this.animatedLines) {
         const wave = Math.sin(
           t * seg.speed * 4 -
-            (seg.segmentIndex / seg.segmentCount) * Math.PI * 2,
+          (seg.segmentIndex / seg.segmentCount) * Math.PI * 2,
         );
 
         const intensity = 0.15 + Math.max(0, wave) * 1.8;
@@ -343,11 +343,42 @@ export class VectorOverlays {
     color: BABYLON.Color3,
     fontSize = 13,
   ): BABYLON.Mesh {
-    const texW = Math.max(
+    // ── HiDPI fix ─────────────────────────────────────────────────────────
+    //
+    // The root cause of blurry labels on HiDPI / Retina screens:
+    //
+    //   DynamicTexture is a 2D canvas. Its resolution is set in physical pixels
+    //   but the values we were passing (texW × texH) were in *CSS* pixels.
+    //   On a 2× device, the canvas is stretched 2× to fill the physical screen,
+    //   which makes every glyph appear half-resolution — blurry.
+    //
+    // Fix:
+    //   1. Multiply both texture dimensions by devicePixelRatio so the canvas
+    //      is allocated at the full physical pixel count.
+    //   2. Multiply the fontSize passed to drawText by the same ratio so the
+    //      glyphs are drawn at the correct physical size inside that larger canvas.
+    //   3. The world-space plane size (worldW) stays in logical units — BabylonJS
+    //      handles the mapping to screen pixels independently.
+    //
+    // Result: crisp text at 1×, 1.5×, 2×, and 3× device pixel ratios.
+
+    const dpr = Math.max(1, window.devicePixelRatio ?? 1);
+
+    // Logical texture dimensions (CSS pixels)
+    const logicalTexW = Math.max(
       128,
       Math.ceil((text.length * fontSize * 0.7) / 64) * 64,
     );
-    const texH = 64;
+    const logicalTexH = 64;
+
+    // Physical texture dimensions — what the canvas is actually allocated at
+    const physTexW = logicalTexW * dpr;
+    const physTexH = logicalTexH * dpr;
+
+    // Font size in physical pixels — must match the physical canvas scale
+    const physFontSize = fontSize * dpr;
+
+    // World-space plane size stays in logical units — unchanged
     const worldW = text.length * fontSize * 0.018 + 0.3;
 
     const plane = BABYLON.MeshBuilder.CreatePlane(
@@ -360,15 +391,20 @@ export class VectorOverlays {
 
     const dt = new BABYLON.DynamicTexture(
       "labelTex",
-      { width: texW, height: texH },
+      { width: physTexW, height: physTexH },
       this.scene,
     );
     dt.hasAlpha = true;
+
+    // samplingMode: NEAREST gives hard pixel edges (no bilinear softening).
+    // For text at this scale, NEAREST is sharper than the default BILINEAR.
+    dt.updateSamplingMode(BABYLON.Texture.NEAREST_NEAREST);
+
     dt.drawText(
       text,
       null,
       null,
-      `bold ${fontSize}px monospace`,
+      `bold ${physFontSize}px monospace`,
       "#ffffff",
       "transparent",
       true,
