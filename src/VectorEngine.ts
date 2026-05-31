@@ -8,6 +8,12 @@ export class VectorEngine {
   private headToTail = false;
   private selectedKey: string | null = null;
   private selectionListeners: Array<(key: string | null) => void> = [];
+  private _counter = 1;
+
+  /** Returns a unique ever-increasing integer for use in generated keys. */
+  nextId(): number {
+    return ++this._counter;
+  }
 
   public onVectorAdded?: (v: Arrow) => void;
   public onVectorUpdated?: (v: Arrow) => void;
@@ -22,6 +28,23 @@ export class VectorEngine {
     if (!v.lockedAxes) v.lockedAxes = [];
     this.vectors.set(v.key, v);
     this.onVectorAdded?.(v);
+  }
+
+  /**
+   * Move the vector at `key` to `newIndex` in iteration order.
+   * All other vectors shift to fill the gap.
+   */
+  reorderVector(key: string, newIndex: number) {
+    const entries = Array.from(this.vectors.entries());
+    const currentIndex = entries.findIndex(([k]) => k === key);
+    if (currentIndex === -1) return;
+    const clamped = Math.max(0, Math.min(newIndex, entries.length - 1));
+    if (currentIndex === clamped) return;
+    const [entry] = entries.splice(currentIndex, 1);
+    entries.splice(clamped, 0, entry);
+    this.vectors = new Map(entries);
+    // Notify all vectors updated so the UI rebuild picks up the new order
+    entries.forEach(([, v]) => this.onVectorUpdated?.(v));
   }
 
   removeVector(key: string) {
@@ -203,8 +226,7 @@ export class VectorEngine {
     if (!src) return;
 
     const newOrigin = this.findEmptyOrigin(constrainToSameAxis, src.origin);
-    const count = this.getVectors().length + 1;
-    const newKey = `${src.label}-copy-${count}`;
+    const newKey = `${src.label}-copy-${this.nextId()}`;
 
     this.addVector({
       key: newKey,
@@ -230,8 +252,7 @@ export class VectorEngine {
     if (!src) return;
 
     const newOrigin = this.findEmptyOrigin(constrainToSameAxis, src.origin);
-    const count = this.getVectors().length + 1;
-    const newKey = `${src.label}-opp-${count}`;
+    const newKey = `${src.label}-opp-${this.nextId()}`;
 
     this.addVector({
       key: newKey,

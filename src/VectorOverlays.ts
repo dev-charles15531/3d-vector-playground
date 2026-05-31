@@ -72,7 +72,7 @@ export class VectorOverlays {
       new BABYLON.Vector3(0, this.defaultOriginHeight, 0),
     );
 
-    if (selected.showComponents !== false) {
+    if (selected.showComponents === true) {
       this.drawComponentBreakdown(origin, selected.value);
     }
 
@@ -80,8 +80,8 @@ export class VectorOverlays {
     if (
       vectors.length === 2 &&
       other &&
-      selected.showAngle !== false &&
-      other.showAngle !== false
+      selected.showAngle === true &&
+      other.showAngle === true
     ) {
       const otherOriginRaw = this.renderer.getRenderedOrigin(
         other.key,

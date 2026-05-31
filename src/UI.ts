@@ -36,6 +36,12 @@ export class UI {
 
   private compactMode = true;
 
+  // ── Panel drag-reorder state ──────────────────────────────────────────────
+  private panelDragKey: string | null = null;
+  private panelDragStartX = 0;
+  private panelDragCurrentX = 0;
+  private panelDragActive = false;
+
   constructor(
     scene: BABYLON.Scene,
     engine: VectorEngine,
@@ -82,6 +88,7 @@ export class UI {
     scene.getEngine().onResizeObservable.add(applyHiDPI);
 
     this.buildUI();
+    this.setupKeybindings();
 
     this.engine.onSelectionChanged(() => {
       this.refreshVectorList();
@@ -373,12 +380,12 @@ export class UI {
   private createVectorBlock(arrow: Arrow): Rectangle {
     const isSelected = this.engine.getSelectedKey() === arrow.key;
     const accentHex = arrow.display?.color?.toHexString() ?? "#2563EB";
-    const boxHeight = isSelected ? "122px" : "100px";
+    const boxHeight = isSelected ? "125px" : "100px";
 
     const box = new Rectangle();
     box.width = "220px";
     box.height = boxHeight;
-    box.thickness = isSelected ? 2 : 1;
+    box.thickness = isSelected ? 1.6 : 1;
     box.color = isSelected ? accentHex : "#334155";
     box.cornerRadius = 7;
     box.background = isSelected ? "#1A2744EE" : "#1E293BCC";
@@ -388,13 +395,94 @@ export class UI {
     box.paddingBottom = "4px";
     box.isPointerBlocker = true;
 
+    // ── Click to select (only fires if not a drag) ─────────────────────
     box.onPointerClickObservable.add(() => {
+      if (this.panelDragActive) return;
       this.engine.toggleVectorSelection(arrow.key);
     });
 
+    const outerStack = new StackPanel();
+    outerStack.isVertical = true;
+    outerStack.height = "100%";
+    box.addControl(outerStack);
+
+    // ── Drag handle strip ─────────────────────────────────────────────────
+    const dragHandle = new Rectangle();
+    dragHandle.width = "100%";
+    dragHandle.height = "7px";
+    dragHandle.thickness = 0;
+    dragHandle.background = "#1E3A5FAA";
+    dragHandle.cornerRadius = 3;
+    dragHandle.isPointerBlocker = true;
+    dragHandle.hoverCursor = "grab";
+    outerStack.addControl(dragHandle);
+
+    const gripDots = new TextBlock();
+    gripDots.text = "⠿";
+    gripDots.color = "#334155";
+    gripDots.fontSize = 7;
+    dragHandle.addControl(gripDots);
+
+    // Pointer-based drag reorder
+    dragHandle.onPointerDownObservable.add((evt) => {
+      // evt is in GUI coordinate space (CSS pixels on standard displays).
+      // We read clientX from the last DOM pointer event via a global stored below.
+      this.panelDragKey = arrow.key;
+      this.panelDragStartX = evt.x;
+      this.panelDragCurrentX = evt.x;
+      this.panelDragActive = false;
+      box.alpha = 0.6;
+      dragHandle.hoverCursor = "grabbing";
+
+      const onMove = (e: PointerEvent) => {
+        if (!this.panelDragKey) return;
+        this.panelDragCurrentX = e.clientX;
+        const dx = this.panelDragCurrentX - this.panelDragStartX;
+        if (Math.abs(dx) > 4) this.panelDragActive = true;
+
+        if (this.panelDragActive) {
+          // Compute which slot the dragged card belongs in.
+          // Each vector block is 220px wide, add button is 48px.
+          // contentPanel children: [addBtn, ...vectorBlocks, opBox]
+          const BLOCK_W = 220;
+          const ADD_W = 48;
+          const vectors = this.engine.getVectors();
+          const currentIdx = vectors.findIndex((v) => v.key === this.panelDragKey);
+
+          // The left edge of the first vector block in screen space
+          // We derive from the panel's left edge, which we can approximate via
+          // the current pointer position and the known slot index.
+          // Simpler: use dx from drag start to determine how many slots to shift.
+          const slotDelta = Math.round(dx / BLOCK_W);
+          const newIdx = Math.max(0, Math.min(currentIdx + slotDelta, vectors.length - 1));
+          if (newIdx !== currentIdx) {
+            this.engine.reorderVector(this.panelDragKey!, newIdx);
+            // Update startX so next move is relative to new position
+            this.panelDragStartX += (newIdx - currentIdx) * BLOCK_W;
+            this.refreshVectorList();
+          }
+        }
+      };
+
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        this.panelDragKey = null;
+        this.panelDragActive = false;
+        // refreshVectorList rebuilds all boxes at full alpha, so stale
+        // closure refs to `box` / `dragHandle` don't need to be reset.
+        this.refreshVectorList();
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    });
+
+    // boxHeight is e.g. "122px" or "100px" — strip "px", subtract handle
+    const innerH = (parseInt(boxHeight, 10) - 7 - 8) + "px"; // 8 = top+bottom padding
     const stack = new StackPanel();
-    stack.height = "100%";
-    box.addControl(stack);
+    stack.height = innerH;
+    outerStack.addControl(stack);
 
     // ── Top row: label + axis locks + remove ────────────────────────────
     const topRow = new StackPanel();
@@ -462,7 +550,7 @@ export class UI {
     magLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     bottomRow.addControl(magLabel);
 
-    const showComp = arrow.showComponents !== false;
+    const showComp = arrow.showComponents === true;
     const compBtn = Button.CreateSimpleButton("comp-" + arrow.key, "XYZ");
     compBtn.width = "28px";
     compBtn.height = "15px";
@@ -477,7 +565,7 @@ export class UI {
     });
     bottomRow.addControl(compBtn);
 
-    const showAngle = arrow.showAngle !== false;
+    const showAngle = arrow.showAngle === true;
     const angleBtn = Button.CreateSimpleButton("angle-" + arrow.key, "∠");
     angleBtn.width = "20px";
     angleBtn.height = "15px";
@@ -510,8 +598,8 @@ export class UI {
 
       const makeHint = (key: string, desc: string, color = "#7DD3FC") => {
         const keyBadge = new Rectangle();
-        keyBadge.width = "16px";
-        keyBadge.height = "12px";
+        keyBadge.width = "20px";
+        keyBadge.height = "14px";
         keyBadge.cornerRadius = 3;
         keyBadge.background = "#1E3A5F";
         keyBadge.thickness = 0;
@@ -520,15 +608,15 @@ export class UI {
         const keyTxt = new TextBlock();
         keyTxt.text = key;
         keyTxt.color = color;
-        keyTxt.fontSize = 8;
+        keyTxt.fontSize = 12;
         keyTxt.fontStyle = "bold";
         keyBadge.addControl(keyTxt);
 
         const descTxt = new TextBlock();
         descTxt.text = desc;
         descTxt.color = "#475569";
-        descTxt.fontSize = 8;
-        descTxt.width = desc.length * 4.5 + 4 + "px";
+        descTxt.fontSize = 10;
+        descTxt.width = desc.length * 6 + 4 + "px";
         descTxt.paddingLeft = "2px";
         descTxt.paddingRight = "5px";
 
@@ -580,12 +668,23 @@ export class UI {
       input.onBlurObservable.add(() => {
         if (isLocked) return;
         const val = parseFloat(input.text);
-        if (isNaN(val)) return;
-        const updatedVec = vec.clone();
+        if (isNaN(val)) {
+          // Revert display to current live value
+          const live = this.engine.getVector(arrow.key);
+          if (live) input.text = Number(live[field][axis]).toFixed(2);
+          return;
+        }
+        // Always read the live vector so we don't overwrite other axes
+        // that may have changed since this row was built.
+        const live = this.engine.getVector(arrow.key);
+        if (!live) return;
+        const updatedVec = live[field].clone();
         updatedVec[axis] = val;
         this.engine.updateVector(arrow.key, {
           [field]: updatedVec,
         } as Partial<Arrow>);
+        // Refresh so the visual arrow and all derived labels update immediately.
+        this.refreshVectorList();
       });
 
       row.addControl(input);
@@ -641,26 +740,64 @@ export class UI {
     inputRow.paddingBottom = "3px";
     leftCol.addControl(inputRow);
 
-    const makeVecInput = (placeholder: string) => {
-      const i = new InputText();
-      i.width = "88px";
-      i.height = "21px";
-      i.placeholderText = placeholder;
-      i.text = "";
-      i.fontSize = 10;
-      i.color = "#E2E8F0";
-      i.placeholderColor = "#475569";
-      i.background = "#1E293B";
-      i.focusedBackground = "#1E293B";
-      i.thickness = 1;
-      i.paddingRight = "3px";
-      return i;
+    // Selector: cycles through available vectors on click.
+    // Returns an object shaped like InputText (has .text + .onTextChangedObservable)
+    // so the downstream refreshDot / perform code doesn't need changes.
+    const makeVecSelector = (placeholder: string) => {
+      let _text = "";
+      const changeListeners: Array<() => void> = [];
+
+      const btn = Button.CreateSimpleButton("vecsel-" + placeholder, placeholder);
+      btn.width = "88px";
+      btn.height = "21px";
+      btn.fontSize = 9;
+      btn.cornerRadius = 3;
+      btn.thickness = 1;
+      btn.paddingRight = "3px";
+      btn.background = "#1E293B";
+      btn.color = "#475569";
+      const btnLabel = btn.textBlock as TextBlock;
+      btnLabel.paddingLeft = "4px";
+      btnLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+      btn.onPointerUpObservable.add(() => {
+        const keys = this.engine.getVectors().map((v) => v.key);
+        if (keys.length === 0) return;
+        const currentIdx = keys.indexOf(_text);
+        // cycle: none → key[0] → key[1] → … → none
+        const nextIdx = (currentIdx + 1) % (keys.length + 1);
+        if (nextIdx === keys.length) {
+          _text = "";
+          btnLabel.text = placeholder;
+          btn.color = "#475569";
+        } else {
+          _text = keys[nextIdx];
+          btnLabel.text = _text;
+          btn.color = "#E2E8F0";
+        }
+        changeListeners.forEach((cb) => cb());
+      });
+
+      // Proxy so callers use selector.text exactly like InputText
+      const selector = {
+        get text() { return _text; },
+        set text(v: string) {
+          _text = v;
+          btnLabel.text = v || placeholder;
+          btn.color = v ? "#E2E8F0" : "#475569";
+        },
+        onTextChangedObservable: {
+          add(cb: () => void) { changeListeners.push(cb); },
+        },
+        _btn: btn,
+      };
+      return selector;
     };
 
-    const leftSelect = makeVecInput("Vector A");
-    const rightSelect = makeVecInput("Vector B");
-    inputRow.addControl(leftSelect);
-    inputRow.addControl(rightSelect);
+    const leftSelect = makeVecSelector("Vector A");
+    const rightSelect = makeVecSelector("Vector B");
+    inputRow.addControl(leftSelect._btn);
+    inputRow.addControl(rightSelect._btn);
 
     const opsRow = new StackPanel();
     opsRow.isVertical = false;
@@ -819,8 +956,7 @@ export class UI {
 
     addToSceneBtn.onPointerUpObservable.add(() => {
       if (!pendingResult) return;
-      const count = this.engine.getVectors().length + 1;
-      const key = `${pendingLabel}-${count}`;
+      const key = `${pendingLabel}-${this.engine.nextId()}`;
       const depA = leftSelect.text.trim();
       const depB = rightSelect.text.trim();
       this.engine.addVector({
@@ -875,7 +1011,7 @@ export class UI {
   }
 
   private addVector() {
-    const count = this.engine.getVectors().length + 1;
+    const id = this.engine.nextId();
     const mag = this.engine.getMaxMagnitude();
 
     let value: BABYLON.Vector3;
@@ -893,8 +1029,8 @@ export class UI {
     }
 
     this.engine.addVector({
-      key: "Vector-" + count,
-      label: "Vector-" + count,
+      key: "Vector-" + id,
+      label: "Vector-" + id,
       type: "base",
       origin: BABYLON.Vector3.Zero(),
       value,
@@ -937,6 +1073,87 @@ export class UI {
       b = hue2rgb(p, q, hNorm - 1 / 3);
     }
     return new BABYLON.Color3(r, g, b);
+  }
+
+  // ── Keybindings ──────────────────────────────────────────────────────────
+
+  /**
+   * Keyboard shortcuts:
+   *   A            → spawn Vector-A at (3, 2, 1)
+   *   B            → spawn Vector-B at (1, 3, 2)
+   *   Ctrl+Shift+A → spawn the inverse (negated) of Vector-A
+   *
+   * The shortcuts are suppressed when the user is typing in an input field.
+   */
+  private setupKeybindings() {
+    // Fixed key for Vector-A so the Ctrl+Shift+A inverse shortcut can find it.
+    const VECTOR_A_KEY = "Vector-A";
+    const VECTOR_B_KEY = "Vector-B";
+
+    window.addEventListener("keydown", (e: KeyboardEvent) => {
+      // Don't fire when typing in an <input>, <textarea>, or contenteditable
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      if ((e.target as HTMLElement)?.isContentEditable) return;
+
+      const key = e.key.toUpperCase();
+      const ctrl = e.ctrlKey || e.metaKey;
+      const shift = e.shiftKey;
+
+      // ── Ctrl+Shift+A : spawn inverse of Vector-A ─────────────────────
+      if (ctrl && shift && key === "A") {
+        e.preventDefault();
+        const src = this.engine.getVector(VECTOR_A_KEY);
+        if (!src) {
+          // Vector-A doesn't exist yet — nothing to invert
+          return;
+        }
+        const id = this.engine.nextId();
+        this.engine.addVector({
+          key: "Vector-A-inv-" + id,
+          label: "Vector-A-inv-" + id,
+          type: "base",
+          origin: BABYLON.Vector3.Zero(),
+          value: src.value.negate(),
+          display: { color: this.randomLightColor3() },
+          vector: null,
+        });
+        this.refreshVectorList();
+        return;
+      }
+
+      // ── A : spawn Vector-A at (3, 2, 1) ──────────────────────────────
+      if (!ctrl && !shift && key === "A") {
+        e.preventDefault();
+        this.engine.addVector({
+          key: VECTOR_A_KEY,
+          label: VECTOR_A_KEY,
+          type: "base",
+          origin: BABYLON.Vector3.Zero(),
+          value: new BABYLON.Vector3(3, 2, 1),
+          display: { color: this.randomLightColor3() },
+          vector: null,
+        });
+        this.refreshVectorList();
+        return;
+      }
+
+      // ── B : spawn Vector-B at (1, 3, 2) ──────────────────────────────
+      if (!ctrl && !shift && key === "B") {
+        e.preventDefault();
+        this.engine.addVector({
+          key: VECTOR_B_KEY,
+          label: VECTOR_B_KEY,
+          type: "base",
+          origin: BABYLON.Vector3.Zero(),
+          value: new BABYLON.Vector3(1, 3, 2),
+          display: { color: this.randomLightColor3() },
+          vector: null,
+        });
+        this.refreshVectorList();
+        return;
+      }
+    });
   }
 
   public dispose() {
